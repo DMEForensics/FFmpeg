@@ -26,6 +26,6 @@
  * Libswresample version macros
  */
 
-#define LIBSWRESAMPLE_VERSION_MAJOR   3
+#define LIBSWRESAMPLE_VERSION_MAJOR   4
 
 #endif /* SWRESAMPLE_VERSION_MAJOR_H */
