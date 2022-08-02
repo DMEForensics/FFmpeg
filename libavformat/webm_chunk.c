@@ -28,7 +28,6 @@
 #include "avio.h"
 #include "avio_internal.h"
 #include "internal.h"
-#include "mux.h"
 
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
@@ -128,7 +127,7 @@ fail:
     s->avoid_negative_ts  = oc->avoid_negative_ts;
     ffformatcontext(s)->avoid_negative_ts_use_pts =
         ffformatcontext(oc)->avoid_negative_ts_use_pts;
-    oc->avoid_negative_ts = AVFMT_AVOID_NEG_TS_DISABLED;
+    oc->avoid_negative_ts = 0;
 
     return 0;
 }

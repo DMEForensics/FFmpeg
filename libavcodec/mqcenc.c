@@ -25,8 +25,6 @@
  * @author Kamil Nowosad
  */
 
-#include <string.h>
-
 #include "libavutil/avassert.h"
 #include "mqc.h"
 

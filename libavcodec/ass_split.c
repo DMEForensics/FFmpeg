@@ -19,14 +19,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include <limits.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-
+#include "libavutil/common.h"
 #include "libavutil/error.h"
-#include "libavutil/macros.h"
 #include "libavutil/mem.h"
 #include "ass_split.h"
 

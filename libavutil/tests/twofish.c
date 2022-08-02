@@ -20,12 +20,10 @@
  */
 
 #include "libavutil/log.h"
-#include "libavutil/mem.h"
 #include "libavutil/twofish.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 int main(int argc, char *argv[])
 {

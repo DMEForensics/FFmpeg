@@ -23,8 +23,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/attributes.h"
 #include "libavutil/common.h"
 #include "libavutil/display.h"
@@ -40,19 +38,15 @@
 #include "bswapdsp.h"
 #include "bytestream.h"
 #include "cabac_functions.h"
-#include "codec_internal.h"
 #include "golomb.h"
 #include "hevc.h"
 #include "hevc_data.h"
 #include "hevc_parse.h"
 #include "hevcdec.h"
 #include "hwconfig.h"
-#include "internal.h"
 #include "profiles.h"
-#include "thread.h"
-#include "threadframe.h"
 
-static const uint8_t hevc_pel_weight[65] = { [2] = 0, [4] = 1, [6] = 2, [8] = 3, [12] = 4, [16] = 5, [24] = 6, [32] = 7, [48] = 8, [64] = 9 };
+const uint8_t ff_hevc_pel_weight[65] = { [2] = 0, [4] = 1, [6] = 2, [8] = 3, [12] = 4, [16] = 5, [24] = 6, [32] = 7, [48] = 8, [64] = 9 };
 
 /**
  * NOTE: Each function hls_foo correspond to the function foo in the
@@ -1509,7 +1503,7 @@ static void luma_mc_uni(HEVCContext *s, uint8_t *dst, ptrdiff_t dststride,
     int my               = mv->y & 3;
     int weight_flag      = (s->sh.slice_type == HEVC_SLICE_P && s->ps.pps->weighted_pred_flag) ||
                            (s->sh.slice_type == HEVC_SLICE_B && s->ps.pps->weighted_bipred_flag);
-    int idx              = hevc_pel_weight[block_w];
+    int idx              = ff_hevc_pel_weight[block_w];
 
     x_off += mv->x >> 2;
     y_off += mv->y >> 2;
@@ -1576,7 +1570,7 @@ static void luma_mc_uni(HEVCContext *s, uint8_t *dst, ptrdiff_t dststride,
     int y_off0           = y_off + (mv0->y >> 2);
     int x_off1           = x_off + (mv1->x >> 2);
     int y_off1           = y_off + (mv1->y >> 2);
-    int idx              = hevc_pel_weight[block_w];
+    int idx              = ff_hevc_pel_weight[block_w];
 
     uint8_t *src0  = ref0->data[0] + y_off0 * src0stride + (int)((unsigned)x_off0 << s->ps.sps->pixel_shift);
     uint8_t *src1  = ref1->data[0] + y_off1 * src1stride + (int)((unsigned)x_off1 << s->ps.sps->pixel_shift);
@@ -1658,7 +1652,7 @@ static void chroma_mc_uni(HEVCContext *s, uint8_t *dst0,
     const Mv *mv         = &current_mv->mv[reflist];
     int weight_flag      = (s->sh.slice_type == HEVC_SLICE_P && s->ps.pps->weighted_pred_flag) ||
                            (s->sh.slice_type == HEVC_SLICE_B && s->ps.pps->weighted_bipred_flag);
-    int idx              = hevc_pel_weight[block_w];
+    int idx              = ff_hevc_pel_weight[block_w];
     int hshift           = s->ps.sps->hshift[1];
     int vshift           = s->ps.sps->vshift[1];
     intptr_t mx          = av_mod_uintp2(mv->x, 2 + hshift);
@@ -1743,7 +1737,7 @@ static void chroma_mc_bi(HEVCContext *s, uint8_t *dst0, ptrdiff_t dststride, AVF
     int y_off0 = y_off + (mv0->y >> (2 + vshift));
     int x_off1 = x_off + (mv1->x >> (2 + hshift));
     int y_off1 = y_off + (mv1->y >> (2 + vshift));
-    int idx = hevc_pel_weight[block_w];
+    int idx = ff_hevc_pel_weight[block_w];
     src1  += y_off0 * src1stride + (int)((unsigned)x_off0 << s->ps.sps->pixel_shift);
     src2  += y_off1 * src2stride + (int)((unsigned)x_off1 << s->ps.sps->pixel_shift);
 
@@ -2987,17 +2981,6 @@ static int set_side_data(HEVCContext *s)
     if ((ret = ff_dovi_attach_side_data(&s->dovi_ctx, out)) < 0)
         return ret;
 
-    if (s->sei.dynamic_hdr_vivid.info) {
-        AVBufferRef *info_ref = av_buffer_ref(s->sei.dynamic_hdr_vivid.info);
-        if (!info_ref)
-            return AVERROR(ENOMEM);
-
-        if (!av_frame_new_side_data_from_buf(out, AV_FRAME_DATA_DYNAMIC_HDR_VIVID, info_ref)) {
-            av_buffer_unref(&info_ref);
-            return AVERROR(ENOMEM);
-        }
-    }
-
     return 0;
 }
 
@@ -3042,7 +3025,7 @@ static int hevc_frame_start(HEVCContext *s)
         s->ref->frame_grain->format = s->ref->frame->format;
         s->ref->frame_grain->width = s->ref->frame->width;
         s->ref->frame_grain->height = s->ref->frame->height;
-        if ((ret = ff_thread_get_buffer(s->avctx, s->ref->frame_grain, 0)) < 0)
+        if ((ret = ff_thread_get_buffer(s->avctx, &s->ref->tf_grain, 0)) < 0)
             goto fail;
     }
 
@@ -3474,8 +3457,8 @@ static int hevc_decode_extradata(HEVCContext *s, uint8_t *buf, int length, int f
     return 0;
 }
 
-static int hevc_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
-                             int *got_output, AVPacket *avpkt)
+static int hevc_decode_frame(AVCodecContext *avctx, void *data, int *got_output,
+                             AVPacket *avpkt)
 {
     int ret;
     uint8_t *sd;
@@ -3483,7 +3466,7 @@ static int hevc_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     HEVCContext *s = avctx->priv_data;
 
     if (!avpkt->size) {
-        ret = ff_hevc_output_frame(s, rframe, 1);
+        ret = ff_hevc_output_frame(s, data, 1);
         if (ret < 0)
             return ret;
 
@@ -3533,7 +3516,7 @@ static int hevc_decode_frame(AVCodecContext *avctx, AVFrame *rframe,
     }
 
     if (s->output_frame->buf[0]) {
-        av_frame_move_ref(rframe, s->output_frame);
+        av_frame_move_ref(data, s->output_frame);
         *got_output = 1;
     }
 
@@ -3549,7 +3532,7 @@ static int hevc_ref_frame(HEVCContext *s, HEVCFrame *dst, HEVCFrame *src)
         return ret;
 
     if (src->needs_fg) {
-        ret = av_frame_ref(dst->frame_grain, src->frame_grain);
+        ret = ff_thread_ref_frame(&dst->tf_grain, &src->tf_grain);
         if (ret < 0)
             return ret;
         dst->needs_fg = 1;
@@ -3647,43 +3630,49 @@ static av_cold int hevc_init_context(AVCodecContext *avctx)
     s->HEVClcList = av_mallocz(sizeof(HEVCLocalContext*) * s->threads_number);
     s->sList = av_mallocz(sizeof(HEVCContext*) * s->threads_number);
     if (!s->HEVClc || !s->HEVClcList || !s->sList)
-        return AVERROR(ENOMEM);
+        goto fail;
     s->HEVClcList[0] = s->HEVClc;
     s->sList[0] = s;
 
     s->cabac_state = av_malloc(HEVC_CONTEXTS);
     if (!s->cabac_state)
-        return AVERROR(ENOMEM);
+        goto fail;
 
     s->output_frame = av_frame_alloc();
     if (!s->output_frame)
-        return AVERROR(ENOMEM);
+        goto fail;
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         s->DPB[i].frame = av_frame_alloc();
         if (!s->DPB[i].frame)
-            return AVERROR(ENOMEM);
+            goto fail;
         s->DPB[i].tf.f = s->DPB[i].frame;
 
         s->DPB[i].frame_grain = av_frame_alloc();
         if (!s->DPB[i].frame_grain)
-            return AVERROR(ENOMEM);
+            goto fail;
+        s->DPB[i].tf_grain.f = s->DPB[i].frame_grain;
     }
 
     s->max_ra = INT_MAX;
 
     s->md5_ctx = av_md5_alloc();
     if (!s->md5_ctx)
-        return AVERROR(ENOMEM);
+        goto fail;
 
     ff_bswapdsp_init(&s->bdsp);
 
     s->dovi_ctx.logctx = avctx;
+    s->context_initialized = 1;
     s->eos = 0;
 
     ff_hevc_reset_sei(&s->sei);
 
     return 0;
+
+fail:
+    hevc_decode_free(avctx);
+    return AVERROR(ENOMEM);
 }
 
 #if HAVE_THREADS
@@ -3693,6 +3682,12 @@ static int hevc_update_thread_context(AVCodecContext *dst,
     HEVCContext *s  = dst->priv_data;
     HEVCContext *s0 = src->priv_data;
     int i, ret;
+
+    if (!s->context_initialized) {
+        ret = hevc_init_context(dst);
+        if (ret < 0)
+            return ret;
+    }
 
     for (i = 0; i < FF_ARRAY_ELEMS(s->DPB); i++) {
         ff_hevc_unref_frame(s, &s->DPB[i], ~0);
@@ -3780,10 +3775,6 @@ static int hevc_update_thread_context(AVCodecContext *dst,
     if (ret < 0)
         return ret;
 
-    ret = av_buffer_replace(&s->sei.dynamic_hdr_vivid.info, s0->sei.dynamic_hdr_vivid.info);
-    if (ret < 0)
-        return ret;
-
     s->sei.frame_packing        = s0->sei.frame_packing;
     s->sei.display_orientation  = s0->sei.display_orientation;
     s->sei.mastering_display    = s0->sei.mastering_display;
@@ -3803,12 +3794,9 @@ static av_cold int hevc_decode_init(AVCodecContext *avctx)
     HEVCContext *s = avctx->priv_data;
     int ret;
 
-    if (avctx->active_thread_type & FF_THREAD_SLICE) {
+    if(avctx->active_thread_type & FF_THREAD_SLICE)
         s->threads_number = avctx->thread_count;
-        ret = ff_slice_thread_init_progress(avctx);
-        if (ret < 0)
-            return ret;
-    } else
+    else
         s->threads_number = 1;
 
     if((avctx->active_thread_type & FF_THREAD_FRAME) && avctx->thread_count > 1)
@@ -3867,23 +3855,23 @@ static const AVClass hevc_decoder_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_hevc_decoder = {
-    .p.name                = "hevc",
-    .p.long_name           = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
-    .p.type                = AVMEDIA_TYPE_VIDEO,
-    .p.id                  = AV_CODEC_ID_HEVC,
+const AVCodec ff_hevc_decoder = {
+    .name                  = "hevc",
+    .long_name             = NULL_IF_CONFIG_SMALL("HEVC (High Efficiency Video Coding)"),
+    .type                  = AVMEDIA_TYPE_VIDEO,
+    .id                    = AV_CODEC_ID_HEVC,
     .priv_data_size        = sizeof(HEVCContext),
-    .p.priv_class          = &hevc_decoder_class,
+    .priv_class            = &hevc_decoder_class,
     .init                  = hevc_decode_init,
     .close                 = hevc_decode_free,
-    FF_CODEC_DECODE_CB(hevc_decode_frame),
+    .decode                = hevc_decode_frame,
     .flush                 = hevc_decode_flush,
     .update_thread_context = ONLY_IF_THREADS_ENABLED(hevc_update_thread_context),
-    .p.capabilities        = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+    .capabilities          = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
                              AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_FRAME_THREADS,
     .caps_internal         = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_EXPORTS_CROPPING |
                              FF_CODEC_CAP_ALLOCATE_PROGRESS | FF_CODEC_CAP_INIT_CLEANUP,
-    .p.profiles            = NULL_IF_CONFIG_SMALL(ff_hevc_profiles),
+    .profiles              = NULL_IF_CONFIG_SMALL(ff_hevc_profiles),
     .hw_configs            = (const AVCodecHWConfigInternal *const []) {
 #if CONFIG_HEVC_DXVA2_HWACCEL
                                HWACCEL_DXVA2(hevc),

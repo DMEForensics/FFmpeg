@@ -30,7 +30,7 @@
 #ifndef AVCODEC_MSMPEG4DATA_H
 #define AVCODEC_MSMPEG4DATA_H
 
-#include <stdint.h>
+#include "libavutil/common.h"
 
 #include "rl.h"
 #include "vlc.h"

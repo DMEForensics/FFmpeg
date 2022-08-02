@@ -134,7 +134,6 @@ static int vmd_read_header(AVFormatContext *s)
     /* if sample rate is 0, assume no audio */
     vmd->sample_rate = AV_RL16(&vmd->vmd_header[804]);
     if (vmd->sample_rate) {
-        int channels;
         st = avformat_new_stream(s, NULL);
         if (!st)
             return AVERROR(ENOMEM);
@@ -151,22 +150,24 @@ static int vmd_read_header(AVFormatContext *s)
             st->codecpar->bits_per_coded_sample = 8;
         }
         if (vmd->vmd_header[811] & 0x80) {
-            channels = 2;
+            st->codecpar->channels       = 2;
+            st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
         } else if (vmd->vmd_header[811] & 0x2) {
             /* Shivers 2 stereo audio */
             /* Frame length is for 1 channel */
-            channels        = 2;
+            st->codecpar->channels       = 2;
+            st->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
             st->codecpar->block_align = st->codecpar->block_align << 1;
         } else {
-            channels = 1;
+            st->codecpar->channels       = 1;
+            st->codecpar->channel_layout = AV_CH_LAYOUT_MONO;
         }
-        av_channel_layout_default(&st->codecpar->ch_layout, channels);
         st->codecpar->bit_rate = st->codecpar->sample_rate *
-            st->codecpar->bits_per_coded_sample * channels;
+            st->codecpar->bits_per_coded_sample * st->codecpar->channels;
 
         /* calculate pts */
         num = st->codecpar->block_align;
-        den = st->codecpar->sample_rate * channels;
+        den = st->codecpar->sample_rate * st->codecpar->channels;
         av_reduce(&num, &den, num, den, (1UL<<31)-1);
         if (vst)
             avpriv_set_pts_info(vst, 33, num, den);

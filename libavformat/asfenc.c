@@ -19,8 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/avassert.h"
 #include "libavutil/dict.h"
 #include "libavutil/mathematics.h"
@@ -29,7 +27,6 @@
 #include "avlanguage.h"
 #include "avio_internal.h"
 #include "internal.h"
-#include "mux.h"
 #include "riff.h"
 #include "asf.h"
 

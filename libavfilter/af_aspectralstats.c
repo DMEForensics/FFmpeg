@@ -21,6 +21,7 @@
 #include <float.h>
 #include <math.h>
 
+#include "libavutil/audio_fifo.h"
 #include "libavutil/opt.h"
 #include "libavutil/tx.h"
 #include "audio.h"
@@ -53,14 +54,16 @@ typedef struct AudioSpectralStatsContext {
     int nb_channels;
     int hop_size;
     ChannelSpectralStats *stats;
+    AVAudioFifo *fifo;
     float *window_func_lut;
+    int64_t pts;
+    int eof;
     av_tx_fn tx_fn;
     AVTXContext **fft;
     AVComplexFloat **fft_in;
     AVComplexFloat **fft_out;
     float **prev_magnitude;
     float **magnitude;
-    AVFrame *window;
 } AudioSpectralStatsContext;
 
 #define OFFSET(x) offsetof(AudioSpectralStatsContext, x)
@@ -81,7 +84,11 @@ static int config_output(AVFilterLink *outlink)
     float overlap, scale;
     int ret;
 
-    s->nb_channels = outlink->ch_layout.nb_channels;
+    s->nb_channels = outlink->channels;
+    s->fifo = av_audio_fifo_alloc(outlink->format, s->nb_channels, s->win_size);
+    if (!s->fifo)
+        return AVERROR(ENOMEM);
+
     s->window_func_lut = av_realloc_f(s->window_func_lut, s->win_size,
                                       sizeof(*s->window_func_lut));
     if (!s->window_func_lut)
@@ -139,10 +146,6 @@ static int config_output(AVFilterLink *outlink)
         if (!s->prev_magnitude[ch])
             return AVERROR(ENOMEM);
     }
-
-    s->window = ff_get_audio_buffer(outlink, s->win_size);
-    if (!s->window)
-        return AVERROR(ENOMEM);
 
     return 0;
 }
@@ -389,15 +392,14 @@ static float spectral_rolloff(const float *const spectral, int size, int max_fre
 static int filter_channel(AVFilterContext *ctx, void *arg, int jobnr, int nb_jobs)
 {
     AudioSpectralStatsContext *s = ctx->priv;
-    const float *window_func_lut = s->window_func_lut;
     AVFrame *in = arg;
     const int channels = s->nb_channels;
+    const int samples = in->nb_samples;
     const int start = (channels * jobnr) / nb_jobs;
     const int end = (channels * (jobnr+1)) / nb_jobs;
-    const int offset = s->win_size - s->hop_size;
 
     for (int ch = start; ch < end; ch++) {
-        float *window = (float *)s->window->extended_data[ch];
+        const float *const src = (const float *const)in->extended_data[ch];
         ChannelSpectralStats *stats = &s->stats[ch];
         AVComplexFloat *fft_out = s->fft_out[ch];
         AVComplexFloat *fft_in = s->fft_in[ch];
@@ -405,12 +407,13 @@ static int filter_channel(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
         float *prev_magnitude = s->prev_magnitude[ch];
         const float scale = 1.f / s->win_size;
 
-        memmove(window, &window[s->hop_size], offset * sizeof(float));
-        memcpy(&window[offset], in->extended_data[ch], in->nb_samples * sizeof(float));
-        memset(&window[offset + in->nb_samples], 0, (s->hop_size - in->nb_samples) * sizeof(float));
+        for (int n = 0; n < samples; n++) {
+            fft_in[n].re = src[n] * s->window_func_lut[n];
+            fft_in[n].im = 0;
+        }
 
-        for (int n = 0; n < s->win_size; n++) {
-            fft_in[n].re = window[n] * window_func_lut[n];
+        for (int n = in->nb_samples; n < s->win_size; n++) {
+            fft_in[n].re = 0;
             fft_in[n].im = 0;
         }
 
@@ -444,71 +447,102 @@ static int filter_channel(AVFilterContext *ctx, void *arg, int jobnr, int nb_job
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFrame *in)
+static int filter_frame(AVFilterLink *inlink)
 {
     AVFilterContext *ctx = inlink->dst;
     AVFilterLink *outlink = ctx->outputs[0];
     AudioSpectralStatsContext *s = ctx->priv;
     AVDictionary **metadata;
-    AVFrame *out;
-    int ret;
+    AVFrame *out, *in = NULL;
+    int ret = 0;
 
-    if (av_frame_is_writable(in)) {
-        out = in;
-    } else {
-        out = ff_get_audio_buffer(outlink, in->nb_samples);
-        if (!out) {
-            av_frame_free(&in);
-            return AVERROR(ENOMEM);
-        }
-        ret = av_frame_copy_props(out, in);
-        if (ret < 0)
-            goto fail;
-        ret = av_frame_copy(out, in);
-        if (ret < 0)
-            goto fail;
+    out = ff_get_audio_buffer(outlink, s->hop_size);
+    if (!out) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
     }
+
+    if (!in) {
+        in = ff_get_audio_buffer(outlink, s->win_size);
+        if (!in)
+            return AVERROR(ENOMEM);
+    }
+
+    ret = av_audio_fifo_peek(s->fifo, (void **)in->extended_data, s->win_size);
+    if (ret < 0)
+        goto fail;
 
     metadata = &out->metadata;
     ff_filter_execute(ctx, filter_channel, in, NULL,
-                      FFMIN(inlink->ch_layout.nb_channels, ff_filter_get_nb_threads(ctx)));
+                      FFMIN(inlink->channels, ff_filter_get_nb_threads(ctx)));
 
     set_metadata(s, metadata);
 
-    if (out != in)
-        av_frame_free(&in);
+    out->pts = s->pts;
+    s->pts += av_rescale_q(s->hop_size, (AVRational){1, outlink->sample_rate}, outlink->time_base);
+
+    av_audio_fifo_read(s->fifo, (void **)out->extended_data, s->hop_size);
+
+    av_frame_free(&in);
     return ff_filter_frame(outlink, out);
 fail:
     av_frame_free(&in);
-    av_frame_free(&out);
-    return ret;
+    return ret < 0 ? ret : 0;
 }
 
 static int activate(AVFilterContext *ctx)
 {
-    AudioSpectralStatsContext *s = ctx->priv;
-    AVFilterLink *outlink = ctx->outputs[0];
     AVFilterLink *inlink = ctx->inputs[0];
-    AVFrame *in;
-    int ret;
+    AVFilterLink *outlink = ctx->outputs[0];
+    AudioSpectralStatsContext *s = ctx->priv;
+    AVFrame *in = NULL;
+    int ret = 0, status;
+    int64_t pts;
 
     FF_FILTER_FORWARD_STATUS_BACK(outlink, inlink);
 
-    ret = ff_inlink_consume_samples(inlink, s->hop_size, s->hop_size, &in);
-    if (ret < 0)
-        return ret;
-    if (ret > 0)
-        ret = filter_frame(inlink, in);
-    if (ret < 0)
-        return ret;
+    if (!s->eof && av_audio_fifo_size(s->fifo) < s->win_size) {
+        ret = ff_inlink_consume_frame(inlink, &in);
+        if (ret < 0)
+            return ret;
 
-    if (ff_inlink_queued_samples(inlink) >= s->hop_size) {
-        ff_filter_set_ready(ctx, 10);
+        if (ret > 0) {
+            ret = av_audio_fifo_write(s->fifo, (void **)in->extended_data,
+                                      in->nb_samples);
+            if (ret >= 0 && s->pts == AV_NOPTS_VALUE)
+                s->pts = in->pts;
+
+            av_frame_free(&in);
+            if (ret < 0)
+                return ret;
+        }
+    }
+
+    if ((av_audio_fifo_size(s->fifo) >= s->win_size) ||
+        (av_audio_fifo_size(s->fifo) > 0 && s->eof)) {
+        ret = filter_frame(inlink);
+        if (av_audio_fifo_size(s->fifo) >= s->win_size)
+            ff_filter_set_ready(ctx, 100);
+        return ret;
+    }
+
+    if (!s->eof && ff_inlink_acknowledge_status(inlink, &status, &pts)) {
+        if (status == AVERROR_EOF) {
+            s->eof = 1;
+            if (av_audio_fifo_size(s->fifo) >= 0) {
+                ff_filter_set_ready(ctx, 100);
+                return 0;
+            }
+        }
+    }
+
+    if (s->eof && av_audio_fifo_size(s->fifo) <= 0) {
+        ff_outlink_set_status(outlink, AVERROR_EOF, s->pts);
         return 0;
     }
 
-    FF_FILTER_FORWARD_STATUS(inlink, outlink);
-    FF_FILTER_FORWARD_WANTED(outlink, inlink);
+    if (!s->eof)
+        FF_FILTER_FORWARD_WANTED(outlink, inlink);
 
     return FFERROR_NOT_READY;
 }
@@ -538,7 +572,8 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->stats);
 
     av_freep(&s->window_func_lut);
-    av_frame_free(&s->window);
+    av_audio_fifo_free(s->fifo);
+    s->fifo = NULL;
 }
 
 static const AVFilterPad aspectralstats_inputs[] = {

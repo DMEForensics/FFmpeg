@@ -3,12 +3,10 @@ DESC    = FFmpeg device handling library
 
 HEADERS = avdevice.h                                                    \
           version.h                                                     \
-          version_major.h                                               \
 
 OBJS    = alldevices.o                                                  \
           avdevice.o                                                    \
           utils.o                                                       \
-          version.o                                                     \
 
 OBJS-$(HAVE_LIBC_MSVCRT)                 += file_open.o
 

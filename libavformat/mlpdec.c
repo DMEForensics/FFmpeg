@@ -21,8 +21,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "avformat.h"
 #include "avio_internal.h"
 #include "internal.h"
@@ -34,11 +32,12 @@
 static int av_always_inline mlp_thd_probe(const AVProbeData *p, uint32_t sync)
 {
     const uint8_t *buf, *last_buf = p->buf, *end = p->buf + p->buf_size;
-    int valid = 0, size = 0;
+    int frames = 0, valid = 0, size = 0;
     int nsubframes = 0;
 
     for (buf = p->buf; buf + 8 <= end; buf++) {
         if (AV_RB32(buf + 4) == sync) {
+            frames++;
             if (last_buf + size == buf) {
                 valid += 1 + nsubframes / 8;
             }

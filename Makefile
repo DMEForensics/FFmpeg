@@ -19,8 +19,6 @@ vpath %/fate_config.sh.template $(SRC_PATH)
 TESTTOOLS   = audiogen videogen rotozoom tiny_psnr tiny_ssim base64 audiomatch
 HOSTPROGS  := $(TESTTOOLS:%=tests/%) doc/print_options
 
-ALLFFLIBS = avcodec avdevice avfilter avformat avutil postproc swscale swresample
-
 # $(FFLIBS-yes) needs to be in linking order
 FFLIBS-$(CONFIG_AVDEVICE)   += avdevice
 FFLIBS-$(CONFIG_AVFILTER)   += avfilter
@@ -78,14 +76,13 @@ tools/target_dem_%_fuzzer$(EXESUF): $(FF_DEP_LIBS)
 CONFIGURABLE_COMPONENTS =                                           \
     $(wildcard $(FFLIBS:%=$(SRC_PATH)/lib%/all*.c))                 \
     $(SRC_PATH)/libavcodec/bitstream_filters.c                      \
-    $(SRC_PATH)/libavcodec/hwaccels.h                               \
     $(SRC_PATH)/libavcodec/parsers.c                                \
     $(SRC_PATH)/libavformat/protocols.c                             \
 
-config_components.h: ffbuild/.config
+config.h: ffbuild/.config
 ffbuild/.config: $(CONFIGURABLE_COMPONENTS)
 	@-tput bold 2>/dev/null
-	@-printf '\nWARNING: $(?) newer than config_components.h, rerun configure\n\n'
+	@-printf '\nWARNING: $(?) newer than config.h, rerun configure\n\n'
 	@-tput sgr0 2>/dev/null
 
 SUBDIR_VARS := CLEANFILES FFLIBS HOSTPROGS TESTPROGS TOOLS               \
@@ -116,13 +113,12 @@ include $(SRC_PATH)/fftools/Makefile
 include $(SRC_PATH)/doc/Makefile
 include $(SRC_PATH)/doc/examples/Makefile
 
-$(ALLFFLIBS:%=lib%/version.o): libavutil/ffversion.h
+libavcodec/avcodec.o libavformat/utils.o libavdevice/avdevice.o libavfilter/avfilter.o libavutil/utils.o libpostproc/postprocess.o libswresample/swresample.o libswscale/utils.o : libavutil/ffversion.h
 
 $(PROGS): %$(PROGSSUF)$(EXESUF): %$(PROGSSUF)_g$(EXESUF)
 ifeq ($(STRIPTYPE),direct)
 	$(STRIP) -o $@ $<
 else
-	$(RM) $@
 	$(CP) $< $@
 	$(STRIP) $@
 endif
@@ -163,7 +159,7 @@ clean::
 	$(RM) -rf coverage.info coverage.info.in lcov
 
 distclean:: clean
-	$(RM) .version config.asm config.h config_components.h mapfile  \
+	$(RM) .version avversion.h config.asm config.h mapfile  \
 		ffbuild/.config ffbuild/config.* libavutil/avconfig.h \
 		version.h libavutil/ffversion.h libavcodec/codec_names.h \
 		libavcodec/bsf_list.c libavformat/protocol_list.c \

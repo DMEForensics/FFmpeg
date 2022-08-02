@@ -38,7 +38,6 @@
 #include <string.h>
 
 #include "libavutil/cpu.h"
-#include "libavutil/error.h"
 #include "libavutil/lfg.h"
 #include "libavutil/log.h"
 #include "libavutil/mathematics.h"

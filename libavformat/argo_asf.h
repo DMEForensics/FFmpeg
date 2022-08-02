@@ -24,7 +24,7 @@
 #define AVFORMAT_ARGO_ASF_H
 
 #include <stdint.h>
-#include "libavutil/macros.h"
+#include "libavutil/common.h"
 
 #include "avformat.h"
 

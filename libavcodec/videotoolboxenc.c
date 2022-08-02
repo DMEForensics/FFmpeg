@@ -30,7 +30,6 @@
 #include "libavcodec/avcodec.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/hwcontext_videotoolbox.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include <pthread.h>
 #include "atsc_a53.h"
@@ -100,7 +99,6 @@ static struct{
 
     CFStringRef kVTCompressionPropertyKey_RealTime;
     CFStringRef kVTCompressionPropertyKey_TargetQualityForAlpha;
-    CFStringRef kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality;
 
     CFStringRef kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder;
     CFStringRef kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder;
@@ -162,8 +160,6 @@ static void loadVTEncSymbols(){
     GET_SYM(kVTCompressionPropertyKey_RealTime, "RealTime");
     GET_SYM(kVTCompressionPropertyKey_TargetQualityForAlpha,
             "TargetQualityForAlpha");
-    GET_SYM(kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality,
-            "PrioritizeEncodingSpeedOverQuality");
 
     GET_SYM(kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder,
             "EnableHardwareAcceleratedVideoEncoder");
@@ -240,7 +236,6 @@ typedef struct VTEncContext {
     int allow_sw;
     int require_sw;
     double alpha_quality;
-    int prio_speed;
 
     bool flushing;
     int has_b_frames;
@@ -1148,15 +1143,6 @@ static int vtenc_create_encoder(AVCodecContext   *avctx,
     if (status) {
         av_log(avctx, AV_LOG_ERROR, "Error setting bitrate property: %d\n", status);
         return AVERROR_EXTERNAL;
-    }
-
-    if (vtctx->prio_speed >= 0) {
-        status = VTSessionSetProperty(vtctx->session,
-                                      compat_keys.kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality,
-                                      vtctx->prio_speed ? kCFBooleanTrue : kCFBooleanFalse);
-        if (status) {
-            av_log(avctx, AV_LOG_WARNING, "PrioritizeEncodingSpeedOverQuality property is not supported on this device. Ignoring.\n");
-        }
     }
 
     if ((vtctx->codec_id == AV_CODEC_ID_H264 || vtctx->codec_id == AV_CODEC_ID_HEVC)
@@ -2695,9 +2681,7 @@ static const enum AVPixelFormat prores_pix_fmts[] = {
     { "frames_before", "Other frames will come before the frames in this session. This helps smooth concatenation issues.", \
         OFFSET(frames_before), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE }, \
     { "frames_after", "Other frames will come after the frames in this session. This helps smooth concatenation issues.", \
-        OFFSET(frames_after), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE }, \
-    { "prio_speed", "prioritize encoding speed", OFFSET(prio_speed), AV_OPT_TYPE_BOOL, \
-        { .i64 = -1 }, -1, 1, VE }, \
+        OFFSET(frames_after), AV_OPT_TYPE_BOOL, { .i64 = 0 }, 0, 1, VE },
 
 #define OFFSET(x) offsetof(VTEncContext, x)
 static const AVOption h264_options[] = {
@@ -2738,18 +2722,18 @@ static const AVClass h264_videotoolbox_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_h264_videotoolbox_encoder = {
-    .p.name           = "h264_videotoolbox",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("VideoToolbox H.264 Encoder"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_H264,
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
+const AVCodec ff_h264_videotoolbox_encoder = {
+    .name             = "h264_videotoolbox",
+    .long_name        = NULL_IF_CONFIG_SMALL("VideoToolbox H.264 Encoder"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_H264,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
     .priv_data_size   = sizeof(VTEncContext),
-    .p.pix_fmts       = avc_pix_fmts,
+    .pix_fmts         = avc_pix_fmts,
     .init             = vtenc_init,
-    FF_CODEC_ENCODE_CB(vtenc_frame),
+    .encode2          = vtenc_frame,
     .close            = vtenc_close,
-    .p.priv_class     = &h264_videotoolbox_class,
+    .priv_class       = &h264_videotoolbox_class,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,
 };
@@ -2772,22 +2756,22 @@ static const AVClass hevc_videotoolbox_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_hevc_videotoolbox_encoder = {
-    .p.name           = "hevc_videotoolbox",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("VideoToolbox H.265 Encoder"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_HEVC,
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+const AVCodec ff_hevc_videotoolbox_encoder = {
+    .name             = "hevc_videotoolbox",
+    .long_name        = NULL_IF_CONFIG_SMALL("VideoToolbox H.265 Encoder"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_HEVC,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
                         AV_CODEC_CAP_HARDWARE,
     .priv_data_size   = sizeof(VTEncContext),
-    .p.pix_fmts       = hevc_pix_fmts,
+    .pix_fmts         = hevc_pix_fmts,
     .init             = vtenc_init,
-    FF_CODEC_ENCODE_CB(vtenc_frame),
+    .encode2          = vtenc_frame,
     .close            = vtenc_close,
-    .p.priv_class     = &hevc_videotoolbox_class,
+    .priv_class       = &hevc_videotoolbox_class,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,
-    .p.wrapper_name   = "videotoolbox",
+    .wrapper_name     = "videotoolbox",
 };
 
 static const AVOption prores_options[] = {
@@ -2811,20 +2795,20 @@ static const AVClass prores_videotoolbox_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_prores_videotoolbox_encoder = {
-    .p.name           = "prores_videotoolbox",
-    .p.long_name      = NULL_IF_CONFIG_SMALL("VideoToolbox ProRes Encoder"),
-    .p.type           = AVMEDIA_TYPE_VIDEO,
-    .p.id             = AV_CODEC_ID_PRORES,
-    .p.capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
+const AVCodec ff_prores_videotoolbox_encoder = {
+    .name             = "prores_videotoolbox",
+    .long_name        = NULL_IF_CONFIG_SMALL("VideoToolbox ProRes Encoder"),
+    .type             = AVMEDIA_TYPE_VIDEO,
+    .id               = AV_CODEC_ID_PRORES,
+    .capabilities     = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY |
                         AV_CODEC_CAP_HARDWARE,
     .priv_data_size   = sizeof(VTEncContext),
-    .p.pix_fmts       = prores_pix_fmts,
+    .pix_fmts         = prores_pix_fmts,
     .init             = vtenc_init,
-    FF_CODEC_ENCODE_CB(vtenc_frame),
+    .encode2          = vtenc_frame,
     .close            = vtenc_close,
-    .p.priv_class     = &prores_videotoolbox_class,
+    .priv_class       = &prores_videotoolbox_class,
     .caps_internal    = FF_CODEC_CAP_INIT_THREADSAFE |
                         FF_CODEC_CAP_INIT_CLEANUP,
-    .p.wrapper_name   = "videotoolbox",
+    .wrapper_name     = "videotoolbox",
 };

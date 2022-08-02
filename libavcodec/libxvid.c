@@ -38,8 +38,8 @@
 #include "libavutil/opt.h"
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "encode.h"
+#include "internal.h"
 #include "mpegutils.h"
 #include "packet_internal.h"
 
@@ -657,6 +657,7 @@ static av_cold int xvid_encode_init(AVCodecContext *avctx)
     if (xvid_flags & AV_CODEC_FLAG_GLOBAL_HEADER) {
         /* In this case, we are claiming to be MPEG-4 */
         x->quicktime_format = 1;
+        avctx->codec_id     = AV_CODEC_ID_MPEG4;
     } else {
         /* We are claiming to be Xvid */
         x->quicktime_format = 0;
@@ -897,18 +898,18 @@ static const AVClass xvid_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_libxvid_encoder = {
-    .p.name         = "libxvid",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("libxvidcore MPEG-4 part 2"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MPEG4,
+const AVCodec ff_libxvid_encoder = {
+    .name           = "libxvid",
+    .long_name      = NULL_IF_CONFIG_SMALL("libxvidcore MPEG-4 part 2"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MPEG4,
     .priv_data_size = sizeof(struct xvid_context),
     .init           = xvid_encode_init,
-    FF_CODEC_ENCODE_CB(xvid_encode_frame),
+    .encode2        = xvid_encode_frame,
     .close          = xvid_encode_close,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
-    .p.priv_class   = &xvid_class,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
+    .priv_class     = &xvid_class,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE |
                       FF_CODEC_CAP_INIT_CLEANUP,
-    .p.wrapper_name = "libxvid",
+    .wrapper_name   = "libxvid",
 };

@@ -24,8 +24,6 @@
  * video presentation timestamp (PTS) modification filter
  */
 
-#include "config_components.h"
-
 #include <inttypes.h>
 
 #include "libavutil/eval.h"

@@ -24,7 +24,6 @@
 #include "libavutil/avassert.h"
 #include "libavutil/mem_internal.h"
 
-#include "threadframe.h"
 #include "videodsp.h"
 #include "vp9data.h"
 #include "vp9dec.h"

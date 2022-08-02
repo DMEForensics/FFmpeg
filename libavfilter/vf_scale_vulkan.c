@@ -239,25 +239,29 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
     RET(ff_vk_init_compute_pipeline(vkctx, s->pl));
 
     if (s->vkctx.output_format != s->vkctx.input_format) {
-        const AVLumaCoefficients *lcoeffs;
+        const struct LumaCoefficients *lcoeffs;
         double tmp_mat[3][3];
 
         struct {
             float yuv_matrix[4][4];
         } *par;
 
-        lcoeffs = av_csp_luma_coeffs_from_avcsp(in->colorspace);
+        lcoeffs = ff_get_luma_coefficients(in->colorspace);
         if (!lcoeffs) {
             av_log(ctx, AV_LOG_ERROR, "Unsupported colorspace\n");
             return AVERROR(EINVAL);
         }
 
-        RET(ff_vk_create_buf(vkctx, &s->params_buf,
-                             sizeof(*par),
-                             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT));
+        err = ff_vk_create_buf(vkctx, &s->params_buf,
+                               sizeof(*par),
+                               VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        if (err)
+            return err;
 
-        RET(ff_vk_map_buffers(vkctx, &s->params_buf, (uint8_t **)&par, 1, 0));
+        err = ff_vk_map_buffers(vkctx, &s->params_buf, (uint8_t **)&par, 1, 0);
+        if (err)
+            return err;
 
         ff_fill_rgb2yuv_table(lcoeffs, tmp_mat);
 
@@ -269,7 +273,9 @@ static av_cold int init_filter(AVFilterContext *ctx, AVFrame *in)
 
         par->yuv_matrix[3][3] = 1.0;
 
-        RET(ff_vk_unmap_buffers(vkctx, &s->params_buf, 1, 1));
+        err = ff_vk_unmap_buffers(vkctx, &s->params_buf, 1, 1);
+        if (err)
+            return err;
 
         s->params_desc.buffer = s->params_buf.buf;
         s->params_desc.range  = VK_WHOLE_SIZE;
@@ -469,7 +475,11 @@ static int scale_vulkan_config_output(AVFilterLink *outlink)
         return AVERROR(EINVAL);
     }
 
-    return ff_vk_filter_config_output(outlink);
+    err = ff_vk_filter_config_output(outlink);
+    if (err < 0)
+        return err;
+
+    return 0;
 }
 
 static void scale_vulkan_uninit(AVFilterContext *avctx)

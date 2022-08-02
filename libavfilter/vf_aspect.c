@@ -23,8 +23,6 @@
  * aspect ratio modification video filters
  */
 
-#include "config_components.h"
-
 #include <float.h>
 
 #include "libavutil/common.h"

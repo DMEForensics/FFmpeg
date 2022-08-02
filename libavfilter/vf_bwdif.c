@@ -350,9 +350,8 @@ static int config_props(AVFilterLink *link)
         s->filter_edge  = filter_edge;
     }
 
-#if ARCH_X86
-    ff_bwdif_init_x86(s);
-#endif
+    if (ARCH_X86)
+        ff_bwdif_init_x86(s);
 
     return 0;
 }

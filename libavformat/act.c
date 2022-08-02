@@ -18,12 +18,11 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
-
-#include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "avio_internal.h"
 #include "riff.h"
 #include "internal.h"
+#include "libavcodec/get_bits.h"
 
 #define CHUNK_SIZE 512
 #define RIFF_TAG MKTAG('R','I','F','F')
@@ -68,7 +67,6 @@ static int read_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     int size;
     AVStream* st;
-    int ret;
 
     int min,sec,msec;
 
@@ -78,9 +76,7 @@ static int read_header(AVFormatContext *s)
 
     avio_skip(pb, 16);
     size=avio_rl32(pb);
-    ret = ff_get_wav_header(s, pb, st->codecpar, size, 0);
-    if (ret < 0)
-        return ret;
+    ff_get_wav_header(s, pb, st->codecpar, size, 0);
 
     /*
       8000Hz (Fine-rec) file format has 10 bytes long
@@ -92,7 +88,7 @@ static int read_header(AVFormatContext *s)
     }
 
     st->codecpar->frame_size=80;
-    st->codecpar->ch_layout.nb_channels = 1;
+    st->codecpar->channels=1;
     avpriv_set_pts_info(st, 64, 1, 100);
 
     st->codecpar->codec_id=AV_CODEC_ID_G729;

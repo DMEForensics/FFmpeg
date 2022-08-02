@@ -21,7 +21,7 @@
 
 #include "avcodec.h"
 #include "ass.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "libavutil/opt.h"
 
 #define SCREEN_ROWS 15
@@ -838,10 +838,10 @@ static int process_cc608(CCaptionSubContext *ctx, uint8_t hi, uint8_t lo)
     return ret;
 }
 
-static int decode(AVCodecContext *avctx, AVSubtitle *sub,
-                  int *got_sub, const AVPacket *avpkt)
+static int decode(AVCodecContext *avctx, void *data, int *got_sub, AVPacket *avpkt)
 {
     CCaptionSubContext *ctx = avctx->priv_data;
+    AVSubtitle *sub = data;
     int64_t in_time = sub->pts;
     int64_t start_time;
     int64_t end_time;
@@ -850,7 +850,6 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
     int len = avpkt->size;
     int ret = 0;
     int i;
-    unsigned nb_rect_allocated = 0;
 
     for (i = 0; i < len; i += 3) {
         uint8_t hi, cc_type = bptr[i] & 1;
@@ -887,7 +886,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
                                                      AV_TIME_BASE_Q, ms_tb);
             else
                 sub->end_display_time = -1;
-            ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+            ret = ff_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
             if (ret < 0)
                 return ret;
             ctx->last_real_time = sub->pts;
@@ -897,7 +896,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
 
     if (!bptr && !ctx->real_time && ctx->buffer[!ctx->buffer_index].str[0]) {
         bidx = !ctx->buffer_index;
-        ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+        ret = ff_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
         if (ret < 0)
             return ret;
         sub->pts = ctx->buffer_time[1];
@@ -915,7 +914,7 @@ static int decode(AVCodecContext *avctx, AVSubtitle *sub,
         capture_screen(ctx);
         ctx->buffer_changed = 0;
 
-        ret = ff_ass_add_rect2(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL, &nb_rect_allocated);
+        ret = ff_ass_add_rect(sub, ctx->buffer[bidx].str, ctx->readorder++, 0, NULL, NULL);
         if (ret < 0)
             return ret;
         sub->end_display_time = -1;
@@ -944,17 +943,17 @@ static const AVClass ccaption_dec_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_ccaption_decoder = {
-    .p.name         = "cc_dec",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Closed Caption (EIA-608 / CEA-708)"),
-    .p.type         = AVMEDIA_TYPE_SUBTITLE,
-    .p.id           = AV_CODEC_ID_EIA_608,
-    .p.priv_class   = &ccaption_dec_class,
-    .p.capabilities = AV_CODEC_CAP_DELAY,
+const AVCodec ff_ccaption_decoder = {
+    .name           = "cc_dec",
+    .long_name      = NULL_IF_CONFIG_SMALL("Closed Caption (EIA-608 / CEA-708)"),
+    .type           = AVMEDIA_TYPE_SUBTITLE,
+    .id             = AV_CODEC_ID_EIA_608,
     .priv_data_size = sizeof(CCaptionSubContext),
     .init           = init_decoder,
     .close          = close_decoder,
     .flush          = flush_decoder,
-    FF_CODEC_DECODE_SUB_CB(decode),
+    .decode         = decode,
+    .priv_class     = &ccaption_dec_class,
+    .capabilities   = AV_CODEC_CAP_DELAY,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,
 };

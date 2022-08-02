@@ -24,7 +24,6 @@
 
 #include <math.h>
 #include "libavutil/avassert.h"
-#include "libavutil/common.h"
 
 enum WindowFunc     { WFUNC_RECT, WFUNC_HANNING, WFUNC_HAMMING, WFUNC_BLACKMAN,
                       WFUNC_BARTLETT, WFUNC_WELCH, WFUNC_FLATTOP,

@@ -31,7 +31,6 @@
 #include "atsc_a53.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "decode.h"
 #include "internal.h"
 
@@ -348,10 +347,8 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
     if (res < 0) {
         if (res == AVERROR(EINVAL))
             res = AVERROR_INVALIDDATA;
-        if (res != AVERROR(EAGAIN)) {
-            dav1d_data_unref(data);
+        if (res != AVERROR(EAGAIN))
             return res;
-        }
     }
 
     res = dav1d_get_picture(dav1d->c, p);
@@ -382,8 +379,7 @@ static int libdav1d_receive_frame(AVCodecContext *c, AVFrame *frame)
 
 #if FF_DAV1D_VERSION_AT_LEAST(5,1)
     dav1d_get_event_flags(dav1d->c, &event_flags);
-    if (c->pix_fmt == AV_PIX_FMT_NONE ||
-        event_flags & DAV1D_EVENT_FLAG_NEW_SEQUENCE)
+    if (event_flags & DAV1D_EVENT_FLAG_NEW_SEQUENCE)
 #endif
     libdav1d_init_params(c, p->seq_hdr);
     res = ff_decode_frame_props(c, frame);
@@ -574,19 +570,19 @@ static const AVClass libdav1d_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_libdav1d_decoder = {
-    .p.name         = "libdav1d",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("dav1d AV1 decoder by VideoLAN"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_AV1,
+const AVCodec ff_libdav1d_decoder = {
+    .name           = "libdav1d",
+    .long_name      = NULL_IF_CONFIG_SMALL("dav1d AV1 decoder by VideoLAN"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_AV1,
     .priv_data_size = sizeof(Libdav1dContext),
     .init           = libdav1d_init,
     .close          = libdav1d_close,
     .flush          = libdav1d_flush,
-    FF_CODEC_RECEIVE_FRAME_CB(libdav1d_receive_frame),
-    .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS,
+    .receive_frame  = libdav1d_receive_frame,
+    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_OTHER_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_SETS_PKT_DTS |
                       FF_CODEC_CAP_AUTO_THREADS,
-    .p.priv_class   = &libdav1d_class,
-    .p.wrapper_name = "libdav1d",
+    .priv_class     = &libdav1d_class,
+    .wrapper_name   = "libdav1d",
 };

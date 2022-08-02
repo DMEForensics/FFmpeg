@@ -29,7 +29,6 @@
 #include "avcodec.h"
 #include "bytestream.h"
 #include "bswapdsp.h"
-#include "codec_internal.h"
 #include "get_bits.h"
 #include "golomb.h"
 #include "internal.h"
@@ -288,7 +287,7 @@ static av_cold void mobiclip_init_static(void)
                                  syms1, sizeof(*syms1), sizeof(*syms1),
                                  0, 0, 1 << MOBI_RL_VLC_BITS);
     for (int i = 0; i < 2; i++) {
-        static VLCElem vlc_buf[2 * 16 << MOBI_MV_VLC_BITS];
+        static VLC_TYPE vlc_buf[2 * 16 << MOBI_MV_VLC_BITS][2];
         for (int j = 0; j < 16; j++) {
             mv_vlc[i][j].table           = &vlc_buf[(16 * i + j) << MOBI_MV_VLC_BITS];
             mv_vlc[i][j].table_allocated = 1 << MOBI_MV_VLC_BITS;
@@ -1208,8 +1207,8 @@ static int predict_motion(AVCodecContext *avctx,
     return 0;
 }
 
-static int mobiclip_decode(AVCodecContext *avctx, AVFrame *rframe,
-                           int *got_frame, AVPacket *pkt)
+static int mobiclip_decode(AVCodecContext *avctx, void *data,
+                            int *got_frame, AVPacket *pkt)
 {
     MobiClipContext *s = avctx->priv_data;
     GetBitContext *gb = &s->gb;
@@ -1308,7 +1307,7 @@ static int mobiclip_decode(AVCodecContext *avctx, AVFrame *rframe,
         avctx->colorspace = AVCOL_SPC_YCGCO;
 
     s->current_pic = (s->current_pic + 1) % 6;
-    ret = av_frame_ref(rframe, frame);
+    ret = av_frame_ref(data, frame);
     if (ret < 0)
         return ret;
     *got_frame = 1;
@@ -1340,16 +1339,16 @@ static av_cold int mobiclip_close(AVCodecContext *avctx)
     return 0;
 }
 
-const FFCodec ff_mobiclip_decoder = {
-    .p.name         = "mobiclip",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("MobiClip Video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_MOBICLIP,
+const AVCodec ff_mobiclip_decoder = {
+    .name           = "mobiclip",
+    .long_name      = NULL_IF_CONFIG_SMALL("MobiClip Video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_MOBICLIP,
     .priv_data_size = sizeof(MobiClipContext),
     .init           = mobiclip_init,
-    FF_CODEC_DECODE_CB(mobiclip_decode),
+    .decode         = mobiclip_decode,
     .flush          = mobiclip_flush,
     .close          = mobiclip_close,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

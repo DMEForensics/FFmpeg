@@ -440,7 +440,7 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     }
 
     nb_samples = in->nb_samples;
-    channels = in->ch_layout.nb_channels;
+    channels = in->channels;
 
     td.in = in;
     td.out = out;

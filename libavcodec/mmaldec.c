@@ -34,7 +34,6 @@
 #include <stdatomic.h>
 
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "decode.h"
 #include "hwconfig.h"
 #include "internal.h"
@@ -829,24 +828,24 @@ static const AVClass ffmmal_dec_class = {
 };
 
 #define FFMMAL_DEC(NAME, ID) \
-    const FFCodec ff_##NAME##_mmal_decoder = { \
-        .p.name         = #NAME "_mmal", \
-        .p.long_name    = NULL_IF_CONFIG_SMALL(#NAME " (mmal)"), \
-        .p.type         = AVMEDIA_TYPE_VIDEO, \
-        .p.id           = ID, \
+    const AVCodec ff_##NAME##_mmal_decoder = { \
+        .name           = #NAME "_mmal", \
+        .long_name      = NULL_IF_CONFIG_SMALL(#NAME " (mmal)"), \
+        .type           = AVMEDIA_TYPE_VIDEO, \
+        .id             = ID, \
         .priv_data_size = sizeof(MMALDecodeContext), \
         .init           = ffmmal_init_decoder, \
         .close          = ffmmal_close_decoder, \
-        FF_CODEC_RECEIVE_FRAME_CB(ffmmal_receive_frame), \
+        .receive_frame  = ffmmal_receive_frame, \
         .flush          = ffmmal_flush, \
-        .p.priv_class   = &ffmmal_dec_class, \
-        .p.capabilities = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE, \
+        .priv_class     = &ffmmal_dec_class, \
+        .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE, \
         .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS, \
-        .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL, \
+        .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_MMAL, \
                                                          AV_PIX_FMT_YUV420P, \
                                                          AV_PIX_FMT_NONE}, \
         .hw_configs     = mmal_hw_configs, \
-        .p.wrapper_name = "mmal", \
+        .wrapper_name   = "mmal", \
     };
 
 FFMMAL_DEC(h264, AV_CODEC_ID_H264)

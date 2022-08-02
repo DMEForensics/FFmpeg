@@ -23,7 +23,6 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "targa.h"
 
@@ -107,10 +106,12 @@ static int targa_decode_rle(AVCodecContext *avctx, TargaContext *s,
     return 0;
 }
 
-static int decode_frame(AVCodecContext *avctx, AVFrame *p,
-                        int *got_frame, AVPacket *avpkt)
+static int decode_frame(AVCodecContext *avctx,
+                        void *data, int *got_frame,
+                        AVPacket *avpkt)
 {
     TargaContext * const s = avctx->priv_data;
+    AVFrame * const p = data;
     uint8_t *dst;
     int stride;
     int idlen, pal, compr, y, w, h, bpp, flags, ret;
@@ -305,12 +306,12 @@ static int decode_frame(AVCodecContext *avctx, AVFrame *p,
     return avpkt->size;
 }
 
-const FFCodec ff_targa_decoder = {
-    .p.name         = "targa",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Truevision Targa image"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_TARGA,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+const AVCodec ff_targa_decoder = {
+    .name           = "targa",
+    .long_name      = NULL_IF_CONFIG_SMALL("Truevision Targa image"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_TARGA,
     .priv_data_size = sizeof(TargaContext),
-    FF_CODEC_DECODE_CB(decode_frame),
+    .decode         = decode_frame,
+    .capabilities   = AV_CODEC_CAP_DR1,
 };

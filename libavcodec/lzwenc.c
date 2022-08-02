@@ -27,7 +27,7 @@
 
 #include <stdint.h>
 #include "libavutil/avassert.h"
-#include "libavutil/macros.h"
+#include "libavutil/common.h"
 #include "lzw.h"
 #include "put_bits.h"
 

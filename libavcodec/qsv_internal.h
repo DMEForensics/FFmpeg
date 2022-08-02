@@ -51,11 +51,6 @@
 #define ASYNC_DEPTH_DEFAULT 4       // internal parallelism
 
 #define QSV_MAX_ENC_PAYLOAD 2       // # of mfxEncodeCtrl payloads supported
-#define QSV_MAX_ENC_EXTPARAM 2
-
-#define QSV_MAX_ROI_NUM 256
-
-#define QSV_MAX_FRAME_EXT_PARAMS 4
 
 #define QSV_VERSION_ATLEAST(MAJOR, MINOR)   \
     (MFX_VERSION_MAJOR > (MAJOR) ||         \
@@ -79,14 +74,9 @@ typedef struct QSVFrame {
     mfxFrameSurface1 surface;
     mfxEncodeCtrl enc_ctrl;
     mfxExtDecodedFrameInfo dec_info;
-#if QSV_VERSION_ATLEAST(1, 34)
-    mfxExtAV1FilmGrainParam av1_film_grain_param;
-#endif
-    mfxExtBuffer *ext_param[QSV_MAX_FRAME_EXT_PARAMS];
-    int num_ext_params;
+    mfxExtBuffer *ext_param;
 
     mfxPayload *payloads[QSV_MAX_ENC_PAYLOAD]; ///< used for enc_ctrl.Payload
-    mfxExtBuffer *extparam[QSV_MAX_ENC_EXTPARAM]; ///< used for enc_ctrl.ExtParam
 
     int queued;
     int used;
@@ -147,11 +137,5 @@ int ff_qsv_init_session_frames(AVCodecContext *avctx, mfxSession *session,
                                const char *load_plugins, int opaque, int gpu_copy);
 
 int ff_qsv_find_surface_idx(QSVFramesContext *ctx, QSVFrame *frame);
-
-void ff_qsv_frame_add_ext_param(AVCodecContext *avctx, QSVFrame *frame,
-                                mfxExtBuffer *param);
-
-int ff_qsv_map_frame_to_surface(const AVFrame *frame, mfxFrameSurface1 *surface);
-
 
 #endif /* AVCODEC_QSV_INTERNAL_H */

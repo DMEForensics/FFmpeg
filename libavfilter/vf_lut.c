@@ -24,8 +24,6 @@
  * value, and apply it to input video.
  */
 
-#include "config_components.h"
-
 #include "libavutil/attributes.h"
 #include "libavutil/bswap.h"
 #include "libavutil/common.h"

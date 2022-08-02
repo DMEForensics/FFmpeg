@@ -47,19 +47,19 @@ int ff_check_exec_params(void *ctx, DNNBackendType backend, DNNFunctionType func
         // currently, the filter does not need multiple outputs,
         // so we just pending the support until we really need it.
         avpriv_report_missing_feature(ctx, "multiple outputs");
-        return AVERROR(ENOSYS);
+        return AVERROR(EINVAL);
     }
 
     return 0;
 }
 
-int ff_dnn_fill_task(TaskItem *task, DNNExecBaseParams *exec_params, void *backend_model, int async, int do_ioproc) {
+DNNReturnType ff_dnn_fill_task(TaskItem *task, DNNExecBaseParams *exec_params, void *backend_model, int async, int do_ioproc) {
     if (task == NULL || exec_params == NULL || backend_model == NULL)
-        return AVERROR(EINVAL);
+        return DNN_ERROR;
     if (do_ioproc != 0 && do_ioproc != 1)
-        return AVERROR(EINVAL);
+        return DNN_ERROR;
     if (async != 0 && async != 1)
-        return AVERROR(EINVAL);
+        return DNN_ERROR;
 
     task->do_ioproc = do_ioproc;
     task->async = async;
@@ -70,7 +70,7 @@ int ff_dnn_fill_task(TaskItem *task, DNNExecBaseParams *exec_params, void *backe
     task->nb_output = exec_params->nb_output;
     task->output_names = exec_params->output_names;
 
-    return 0;
+    return DNN_SUCCESS;
 }
 
 /**
@@ -82,61 +82,60 @@ static void *async_thread_routine(void *args)
     DNNAsyncExecModule *async_module = args;
     void *request = async_module->args;
 
-    if (async_module->start_inference(request) != 0) {
+    if (async_module->start_inference(request) != DNN_SUCCESS) {
         return DNN_ASYNC_FAIL;
     }
     async_module->callback(request);
     return DNN_ASYNC_SUCCESS;
 }
 
-int ff_dnn_async_module_cleanup(DNNAsyncExecModule *async_module)
+DNNReturnType ff_dnn_async_module_cleanup(DNNAsyncExecModule *async_module)
 {
     void *status = 0;
     if (!async_module) {
-        return AVERROR(EINVAL);
+        return DNN_ERROR;
     }
 #if HAVE_PTHREAD_CANCEL
     pthread_join(async_module->thread_id, &status);
     if (status == DNN_ASYNC_FAIL) {
         av_log(NULL, AV_LOG_ERROR, "Last Inference Failed.\n");
-        return DNN_GENERIC_ERROR;
+        return DNN_ERROR;
     }
 #endif
     async_module->start_inference = NULL;
     async_module->callback = NULL;
     async_module->args = NULL;
-    return 0;
+    return DNN_SUCCESS;
 }
 
-int ff_dnn_start_inference_async(void *ctx, DNNAsyncExecModule *async_module)
+DNNReturnType ff_dnn_start_inference_async(void *ctx, DNNAsyncExecModule *async_module)
 {
     int ret;
     void *status = 0;
 
     if (!async_module) {
         av_log(ctx, AV_LOG_ERROR, "async_module is null when starting async inference.\n");
-        return AVERROR(EINVAL);
+        return DNN_ERROR;
     }
 
 #if HAVE_PTHREAD_CANCEL
     pthread_join(async_module->thread_id, &status);
     if (status == DNN_ASYNC_FAIL) {
         av_log(ctx, AV_LOG_ERROR, "Unable to start inference as previous inference failed.\n");
-        return DNN_GENERIC_ERROR;
+        return DNN_ERROR;
     }
     ret = pthread_create(&async_module->thread_id, NULL, async_thread_routine, async_module);
     if (ret != 0) {
         av_log(ctx, AV_LOG_ERROR, "Unable to start async inference.\n");
-        return ret;
+        return DNN_ERROR;
     }
 #else
-    ret = async_module->start_inference(async_module->args);
-    if (ret != 0) {
-        return ret;
+    if (async_module->start_inference(async_module->args) != DNN_SUCCESS) {
+        return DNN_ERROR;
     }
     async_module->callback(async_module->args);
 #endif
-    return 0;
+    return DNN_SUCCESS;
 }
 
 DNNAsyncStatusType ff_dnn_get_result_common(Queue *task_queue, AVFrame **in, AVFrame **out)
@@ -159,7 +158,7 @@ DNNAsyncStatusType ff_dnn_get_result_common(Queue *task_queue, AVFrame **in, AVF
     return DAST_SUCCESS;
 }
 
-int ff_dnn_fill_gettingoutput_task(TaskItem *task, DNNExecBaseParams *exec_params, void *backend_model, int input_height, int input_width, void *ctx)
+DNNReturnType ff_dnn_fill_gettingoutput_task(TaskItem *task, DNNExecBaseParams *exec_params, void *backend_model, int input_height, int input_width, void *ctx)
 {
     AVFrame *in_frame = NULL;
     AVFrame *out_frame = NULL;
@@ -167,14 +166,14 @@ int ff_dnn_fill_gettingoutput_task(TaskItem *task, DNNExecBaseParams *exec_param
     in_frame = av_frame_alloc();
     if (!in_frame) {
         av_log(ctx, AV_LOG_ERROR, "Failed to allocate memory for input frame\n");
-        return AVERROR(ENOMEM);
+        return DNN_ERROR;
     }
 
     out_frame = av_frame_alloc();
     if (!out_frame) {
         av_frame_free(&in_frame);
         av_log(ctx, AV_LOG_ERROR, "Failed to allocate memory for output frame\n");
-        return AVERROR(ENOMEM);
+        return DNN_ERROR;
     }
 
     in_frame->width = input_width;

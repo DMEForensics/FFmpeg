@@ -23,8 +23,6 @@
  * format and noformat video filters
  */
 
-#include "config_components.h"
-
 #include <string.h>
 
 #include "libavutil/internal.h"

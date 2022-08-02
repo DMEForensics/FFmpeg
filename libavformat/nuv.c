@@ -25,7 +25,6 @@
 #include "libavutil/intfloat.h"
 #include "avformat.h"
 #include "avio_internal.h"
-#include "demux.h"
 #include "internal.h"
 #include "riff.h"
 
@@ -117,11 +116,10 @@ static int get_codec_data(AVFormatContext *s, AVIOContext *pb, AVStream *vst,
                     return AVERROR_INVALIDDATA;
                 }
                 ast->codecpar->bits_per_coded_sample = avio_rl32(pb);
-                av_channel_layout_uninit(&ast->codecpar->ch_layout);
-                ast->codecpar->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-                ast->codecpar->ch_layout.nb_channels = avio_rl32(pb);
-                if (ast->codecpar->ch_layout.nb_channels <= 0) {
-                    av_log(s, AV_LOG_ERROR, "Invalid channels %d\n", ast->codecpar->ch_layout.nb_channels);
+                ast->codecpar->channels              = avio_rl32(pb);
+                ast->codecpar->channel_layout        = 0;
+                if (ast->codecpar->channels <= 0) {
+                    av_log(s, AV_LOG_ERROR, "Invalid channels %d\n", ast->codecpar->channels);
                     return AVERROR_INVALIDDATA;
                 }
 
@@ -229,7 +227,8 @@ static int nuv_header(AVFormatContext *s)
 
         ast->codecpar->codec_type            = AVMEDIA_TYPE_AUDIO;
         ast->codecpar->codec_id              = AV_CODEC_ID_PCM_S16LE;
-        ast->codecpar->ch_layout             = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        ast->codecpar->channels              = 2;
+        ast->codecpar->channel_layout        = AV_CH_LAYOUT_STEREO;
         ast->codecpar->sample_rate           = 44100;
         ast->codecpar->bit_rate              = 2 * 2 * 44100 * 8;
         ast->codecpar->block_align           = 2 * 2;

@@ -22,12 +22,13 @@
  */
 
 #include "avformat.h"
-#include "demux.h"
 #include "internal.h"
 #include "isom.h"
 #include "libavcodec/mpeg4audio.h"
 #include "libavcodec/mpegaudiodata.h"
+#include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
+#include "libavutil/intreadwrite.h"
 
 /* http://www.mp4ra.org */
 /* ordered by muxing preference */
@@ -118,9 +119,9 @@ static const char mov_mdhd_language_map[][4] = {
     "hun",    /*  26 Hungarian */
     "est",    /*  27 Estonian */
     "lav",    /*  28 Latvian */
-    "smi",    /*  29 Sami */
+       "",    /*  29 Sami */
     "fo ",    /*  30 Faroese */
-    "per",    /*  31 Farsi */
+       "",    /*  31 Farsi */
     "rus",    /*  32 Russian */
     "chi",    /*  33 Simplified Chinese */
        "",    /*  34 Flemish */
@@ -165,7 +166,7 @@ static const char mov_mdhd_language_map[][4] = {
     "kan",    /*  73 Kannada */
     "tam",    /*  74 Tamil */
     "tel",    /*  75 Telugu */
-    "sin",    /*  76 Sinhala */
+       "",    /*  76 Sinhala */
     "bur",    /*  77 Burmese */
     "khm",    /*  78 Khmer */
     "lao",    /*  79 Lao */
@@ -179,9 +180,9 @@ static const char mov_mdhd_language_map[][4] = {
     "orm",    /*  87 Oromo */
     "som",    /*  88 Somali */
     "swa",    /*  89 Swahili */
-    "kin",    /*  90 Kinyarwanda */
+       "",    /*  90 Kinyarwanda */
     "run",    /*  91 Rundi */
-    "nya",    /*  92 Nyanja */
+       "",    /*  92 Nyanja */
     "mlg",    /*  93 Malagasy */
     "epo",    /*  94 Esperanto */
        "",    /*  95  */
@@ -359,8 +360,7 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
                                                 st->codecpar->extradata_size, 1, fc);
             if (ret < 0)
                 return ret;
-            st->codecpar->ch_layout.order = AV_CHANNEL_ORDER_UNSPEC;
-            st->codecpar->ch_layout.nb_channels = cfg.channels;
+            st->codecpar->channels = cfg.channels;
             if (cfg.object_type == 29 && cfg.sampling_index < 3) // old mp3on4
                 st->codecpar->sample_rate = ff_mpa_freq_tab[cfg.sampling_index];
             else if (cfg.ext_sample_rate)
@@ -368,7 +368,7 @@ int ff_mp4_read_dec_config_descr(AVFormatContext *fc, AVStream *st, AVIOContext 
             else
                 st->codecpar->sample_rate = cfg.sample_rate;
             av_log(fc, AV_LOG_TRACE, "mp4a config channels %d obj %d ext obj %d "
-                    "sample rate %d ext sample rate %d\n", cfg.channels,
+                    "sample rate %d ext sample rate %d\n", st->codecpar->channels,
                     cfg.object_type, cfg.ext_object_type,
                     cfg.sample_rate, cfg.ext_sample_rate);
             if (!(st->codecpar->codec_id = ff_codec_get_id(mp4_audio_types,

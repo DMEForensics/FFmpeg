@@ -23,6 +23,7 @@
 #include "libavutil/avassert.h"
 #include "cbs.h"
 #include "cbs_av1.h"
+#include "internal.h"
 #include "parser.h"
 
 typedef struct AV1ParseContext {

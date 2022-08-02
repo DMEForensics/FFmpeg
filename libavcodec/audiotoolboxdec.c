@@ -23,11 +23,9 @@
 #include <AudioToolbox/AudioToolbox.h>
 
 #include "config.h"
-#include "config_components.h"
 #include "avcodec.h"
 #include "ac3_parser_internal.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "internal.h"
 #include "mpegaudiodecheader.h"
 #include "libavutil/avassert.h"
@@ -168,8 +166,8 @@ static int ffat_update_ctx(AVCodecContext *avctx)
                                    &size, &format)) {
         if (format.mSampleRate)
             avctx->sample_rate = format.mSampleRate;
-        av_channel_layout_uninit(&avctx->ch_layout);
-        av_channel_layout_default(&avctx->ch_layout, format.mChannelsPerFrame);
+        avctx->channels = format.mChannelsPerFrame;
+        avctx->channel_layout = av_get_default_channel_layout(avctx->channels);
         avctx->frame_size = format.mFramesPerPacket;
     }
 
@@ -177,7 +175,7 @@ static int ffat_update_ctx(AVCodecContext *avctx)
                                    kAudioConverterCurrentOutputStreamDescription,
                                    &size, &format)) {
         format.mSampleRate = avctx->sample_rate;
-        format.mChannelsPerFrame = avctx->ch_layout.nb_channels;
+        format.mChannelsPerFrame = avctx->channels;
         AudioConverterSetProperty(at->converter,
                                   kAudioConverterCurrentOutputStreamDescription,
                                   size, &format);
@@ -203,8 +201,7 @@ static int ffat_update_ctx(AVCodecContext *avctx)
             layout_mask |= 1 << id;
             layout->mChannelDescriptions[i].mChannelFlags = i; // Abusing flags as index
         }
-        av_channel_layout_uninit(&avctx->ch_layout);
-        av_channel_layout_from_mask(&avctx->ch_layout, layout_mask);
+        avctx->channel_layout = layout_mask;
         qsort(layout->mChannelDescriptions, layout->mNumberChannelDescriptions,
               sizeof(AudioChannelDescription), &ffat_compare_channel_descriptions);
         for (i = 0; i < layout->mNumberChannelDescriptions; i++)
@@ -367,18 +364,11 @@ static av_cold int ffat_create_decoder(AVCodecContext *avctx,
 #endif
     } else {
         in_format.mSampleRate = avctx->sample_rate ? avctx->sample_rate : 44100;
-        in_format.mChannelsPerFrame = avctx->ch_layout.nb_channels ? avctx->ch_layout.nb_channels : 1;
+        in_format.mChannelsPerFrame = avctx->channels ? avctx->channels : 1;
     }
 
     avctx->sample_rate = out_format.mSampleRate = in_format.mSampleRate;
-    av_channel_layout_uninit(&avctx->ch_layout);
-    avctx->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-    avctx->ch_layout.nb_channels = out_format.mChannelsPerFrame = in_format.mChannelsPerFrame;
-
-    out_format.mBytesPerFrame =
-        out_format.mChannelsPerFrame * (out_format.mBitsPerChannel / 8);
-    out_format.mBytesPerPacket =
-        out_format.mBytesPerFrame * out_format.mFramesPerPacket;
+    avctx->channels = out_format.mChannelsPerFrame = in_format.mChannelsPerFrame;
 
     if (avctx->codec_id == AV_CODEC_ID_ADPCM_IMA_QT)
         in_format.mFramesPerPacket = 64;
@@ -399,7 +389,7 @@ static av_cold int ffat_create_decoder(AVCodecContext *avctx,
     ffat_update_ctx(avctx);
 
     if(!(at->decoded_data = av_malloc(av_get_bytes_per_sample(avctx->sample_fmt)
-                                      * avctx->frame_size * avctx->ch_layout.nb_channels)))
+                                      * avctx->frame_size * avctx->channels)))
         return AVERROR(ENOMEM);
 
     at->last_pts = AV_NOPTS_VALUE;
@@ -418,7 +408,7 @@ static av_cold int ffat_init_decoder(AVCodecContext *avctx)
         memcpy(at->extradata, avctx->extradata, avctx->extradata_size);
     }
 
-    if ((avctx->ch_layout.nb_channels && avctx->sample_rate) || ffat_usable_extradata(avctx))
+    if ((avctx->channels && avctx->sample_rate) || ffat_usable_extradata(avctx))
         return ffat_create_decoder(avctx, NULL);
     else
         return 0;
@@ -465,11 +455,11 @@ static OSStatus ffat_decode_callback(AudioConverterRef converter, UInt32 *nb_pac
 
 #define COPY_SAMPLES(type) \
     type *in_ptr = (type*)at->decoded_data; \
-    type *end_ptr = in_ptr + frame->nb_samples * avctx->ch_layout.nb_channels; \
+    type *end_ptr = in_ptr + frame->nb_samples * avctx->channels; \
     type *out_ptr = (type*)frame->data[0]; \
-    for (; in_ptr < end_ptr; in_ptr += avctx->ch_layout.nb_channels, out_ptr += avctx->ch_layout.nb_channels) { \
+    for (; in_ptr < end_ptr; in_ptr += avctx->channels, out_ptr += avctx->channels) { \
         int c; \
-        for (c = 0; c < avctx->ch_layout.nb_channels; c++) \
+        for (c = 0; c < avctx->channels; c++) \
             out_ptr[c] = in_ptr[at->channel_map[c]]; \
     }
 
@@ -483,10 +473,11 @@ static void ffat_copy_samples(AVCodecContext *avctx, AVFrame *frame)
     }
 }
 
-static int ffat_decode(AVCodecContext *avctx, AVFrame *frame,
+static int ffat_decode(AVCodecContext *avctx, void *data,
                        int *got_frame_ptr, AVPacket *avpkt)
 {
     ATDecodeContext *at = avctx->priv_data;
+    AVFrame *frame = data;
     int pkt_size = avpkt->size;
     OSStatus ret;
     AudioBufferList out_buffers;
@@ -518,9 +509,9 @@ static int ffat_decode(AVCodecContext *avctx, AVFrame *frame,
         .mNumberBuffers = 1,
         .mBuffers = {
             {
-                .mNumberChannels = avctx->ch_layout.nb_channels,
+                .mNumberChannels = avctx->channels,
                 .mDataByteSize = av_get_bytes_per_sample(avctx->sample_fmt) * avctx->frame_size
-                                 * avctx->ch_layout.nb_channels,
+                                 * avctx->channels,
             }
         }
     };
@@ -589,21 +580,21 @@ static av_cold int ffat_close_decoder(AVCodecContext *avctx)
 
 #define FFAT_DEC(NAME, ID, bsf_name) \
     FFAT_DEC_CLASS(NAME) \
-    const FFCodec ff_##NAME##_at_decoder = { \
-        .p.name         = #NAME "_at", \
-        .p.long_name    = NULL_IF_CONFIG_SMALL(#NAME " (AudioToolbox)"), \
-        .p.type         = AVMEDIA_TYPE_AUDIO, \
-        .p.id           = ID, \
+    const AVCodec ff_##NAME##_at_decoder = { \
+        .name           = #NAME "_at", \
+        .long_name      = NULL_IF_CONFIG_SMALL(#NAME " (AudioToolbox)"), \
+        .type           = AVMEDIA_TYPE_AUDIO, \
+        .id             = ID, \
         .priv_data_size = sizeof(ATDecodeContext), \
         .init           = ffat_init_decoder, \
         .close          = ffat_close_decoder, \
-        FF_CODEC_DECODE_CB(ffat_decode), \
+        .decode         = ffat_decode, \
         .flush          = ffat_decode_flush, \
-        .p.priv_class   = &ffat_##NAME##_dec_class, \
+        .priv_class     = &ffat_##NAME##_dec_class, \
         .bsfs           = bsf_name, \
-        .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF, \
+        .capabilities   = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_CHANNEL_CONF, \
         .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP, \
-        .p.wrapper_name = "at", \
+        .wrapper_name   = "at", \
     };
 
 FFAT_DEC(aac,          AV_CODEC_ID_AAC, "aac_adtstoasc")

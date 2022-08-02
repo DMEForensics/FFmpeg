@@ -1054,7 +1054,7 @@ static int setup_queue_families(AVHWDeviceContext *ctx, VkDeviceCreateInfo *cd)
     SETUP_QUEUE(enc_index)
     SETUP_QUEUE(dec_index)
 
-#undef SETUP_QUEUE
+#undef ADD_QUEUE
 
     av_free(qf);
 
@@ -1321,18 +1321,8 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
     VulkanDevicePriv *p = ctx->internal->priv;
     FFVulkanFunctions *vk = &p->vkfn;
     AVVulkanDeviceContext *hwctx = ctx->hwctx;
-
-    /*
-     * VkPhysicalDeviceVulkan12Features has a timelineSemaphore field, but
-     * MoltenVK doesn't implement VkPhysicalDeviceVulkan12Features yet, so we
-     * use VkPhysicalDeviceTimelineSemaphoreFeatures directly.
-     */
-    VkPhysicalDeviceTimelineSemaphoreFeatures timeline_features = {
-        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES,
-    };
     VkPhysicalDeviceVulkan12Features dev_features_1_2 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES,
-        .pNext = &timeline_features,
     };
     VkPhysicalDeviceVulkan11Features dev_features_1_1 = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES,
@@ -1376,7 +1366,7 @@ static int vulkan_device_create_internal(AVHWDeviceContext *ctx,
 #undef COPY_FEATURE
 
     /* We require timeline semaphores */
-    if (!timeline_features.timelineSemaphore) {
+    if (!dev_features_1_2.timelineSemaphore) {
         av_log(ctx, AV_LOG_ERROR, "Device does not support timeline semaphores!\n");
         err = AVERROR(ENOSYS);
         goto end;
@@ -2937,7 +2927,6 @@ static int vulkan_map_from_drm(AVHWFramesContext *hwfc, AVFrame *dst,
 
 fail:
     vulkan_frame_free(hwfc->device_ctx->hwctx, (uint8_t *)f);
-    dst->data[0] = NULL;
     return err;
 }
 

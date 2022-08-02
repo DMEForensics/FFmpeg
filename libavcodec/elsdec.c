@@ -25,14 +25,11 @@
  * Entropy Logarithmic-Scale binary arithmetic decoder
  */
 
-#include <stddef.h>
+#include <math.h>
 #include <stdint.h>
-#include <string.h>
 
-#include "libavutil/error.h"
+#include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
-#include "libavutil/macros.h"
-#include "libavutil/mem.h"
 
 #include "elsdec.h"
 

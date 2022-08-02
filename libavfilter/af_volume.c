@@ -238,9 +238,8 @@ static av_cold void volume_init(VolumeContext *vol)
         break;
     }
 
-#if ARCH_X86
-    ff_volume_init_x86(vol);
-#endif
+    if (ARCH_X86)
+        ff_volume_init_x86(vol);
 }
 
 static int set_volume(AVFilterContext *ctx)
@@ -282,7 +281,7 @@ static int config_output(AVFilterLink *outlink)
     AVFilterLink *inlink = ctx->inputs[0];
 
     vol->sample_fmt = inlink->format;
-    vol->channels   = inlink->ch_layout.nb_channels;
+    vol->channels   = inlink->channels;
     vol->planes     = av_sample_fmt_is_planar(inlink->format) ? vol->channels : 1;
 
     vol->var_values[VAR_N] =
@@ -295,7 +294,7 @@ static int config_output(AVFilterLink *outlink)
     vol->var_values[VAR_T] =
     vol->var_values[VAR_VOLUME] = NAN;
 
-    vol->var_values[VAR_NB_CHANNELS] = inlink->ch_layout.nb_channels;
+    vol->var_values[VAR_NB_CHANNELS] = inlink->channels;
     vol->var_values[VAR_TB]          = av_q2d(inlink->time_base);
     vol->var_values[VAR_SAMPLE_RATE] = inlink->sample_rate;
 

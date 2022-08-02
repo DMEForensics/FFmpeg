@@ -35,8 +35,8 @@
 #include "libavutil/imgutils.h"
 #include "avcodec.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "encode.h"
+#include "internal.h"
 #include "lzw.h"
 #include "gif.h"
 
@@ -552,19 +552,19 @@ static const AVClass gif_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_gif_encoder = {
-    .p.name         = "gif",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("GIF (Graphics Interchange Format)"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_GIF,
+const AVCodec ff_gif_encoder = {
+    .name           = "gif",
+    .long_name      = NULL_IF_CONFIG_SMALL("GIF (Graphics Interchange Format)"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_GIF,
     .priv_data_size = sizeof(GIFContext),
     .init           = gif_encode_init,
-    FF_CODEC_ENCODE_CB(gif_encode_frame),
+    .encode2        = gif_encode_frame,
     .close          = gif_encode_close,
-    .p.pix_fmts     = (const enum AVPixelFormat[]){
+    .pix_fmts       = (const enum AVPixelFormat[]){
         AV_PIX_FMT_RGB8, AV_PIX_FMT_BGR8, AV_PIX_FMT_RGB4_BYTE, AV_PIX_FMT_BGR4_BYTE,
         AV_PIX_FMT_GRAY8, AV_PIX_FMT_PAL8, AV_PIX_FMT_NONE
     },
-    .p.priv_class   = &gif_class,
+    .priv_class     = &gif_class,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

@@ -21,40 +21,36 @@
 #include "avformat.h"
 #include "rtpenc.h"
 
-void ff_rtp_send_raw_rfc4175(AVFormatContext *s1, const uint8_t *buf, int size, int interlaced, int field)
+void ff_rtp_send_raw_rfc4175(AVFormatContext *s1, const uint8_t *buf, int size)
 {
     RTPMuxContext *s = s1->priv_data;
     int width = s1->streams[0]->codecpar->width;
     int height = s1->streams[0]->codecpar->height;
     int xinc, yinc, pgroup;
+    int field = 0;
     int i = 0;
     int offset = 0;
 
     s->timestamp = s->cur_timestamp;
     switch (s1->streams[0]->codecpar->format) {
         case AV_PIX_FMT_UYVY422:
-            xinc = 2;
-            yinc = 1 << interlaced;
+            xinc = yinc = 2;
             pgroup = 4;
             break;
         case AV_PIX_FMT_YUV422P10:
-            xinc = 2;
-            yinc = 1 << interlaced;
+            xinc = yinc = 2;
             pgroup = 5;
             break;
         case AV_PIX_FMT_YUV420P:
-            xinc = 4;
-            yinc = 1 << interlaced;
+            xinc = yinc = 4;
             pgroup = 6;
             break;
         case AV_PIX_FMT_RGB24:
-            xinc = 1;
-            yinc = 1 << interlaced;
+            xinc = yinc = 1;
             pgroup = 3;
             break;
         case AV_PIX_FMT_BGR24:
-            xinc = 1;
-            yinc = 1 << interlaced;
+            xinc = yinc = 1;
             pgroup = 3;
             break;
         default:
@@ -76,9 +72,7 @@ void ff_rtp_send_raw_rfc4175(AVFormatContext *s1, const uint8_t *buf, int size, 
 
         headers = dest;
         do {
-            int l_line;
-
-            pixels = width - offset;
+            pixels = width * xinc - offset;
             length = (pixels * pgroup) / xinc;
 
             left -= head_size;
@@ -96,9 +90,8 @@ void ff_rtp_send_raw_rfc4175(AVFormatContext *s1, const uint8_t *buf, int size, 
             *dest++ = length & 0xff;
 
             /* Line No */
-            l_line = i >> interlaced;
-            *dest++ = ((l_line >> 8) & 0x7f) | ((field << 7) & 0x80);
-            *dest++ = l_line & 0xff;
+            *dest++ = ((i >> 8) & 0x7f) | ((field << 7) & 0x80);
+            *dest++ = i & 0xff;
             if (next_line) i += yinc;
 
             cont = (left > (head_size + pgroup) && i < height) ? 0x80 : 0x00;
@@ -113,20 +106,16 @@ void ff_rtp_send_raw_rfc4175(AVFormatContext *s1, const uint8_t *buf, int size, 
         } while (cont);
 
         do {
-            int l_field;
             int l_line;
             int l_off;
             int copy_offset;
 
             length    = (headers[0] << 8) | headers[1];
-            l_field   = (headers[2] & 0x80) >> 7;
             l_line    = ((headers[2] & 0x7f) << 8) | headers[3];
             l_off     = ((headers[4] & 0x7f) << 8) | headers[5];
             cont      = headers[4] & 0x80;
             headers  += head_size;
 
-            if (interlaced)
-                l_line = 2 * l_line + l_field;
             copy_offset = (l_line * width + l_off) * pgroup / xinc;
             if (copy_offset + length > size)
                 break;

@@ -30,9 +30,8 @@
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
 #include "avcodec.h"
-#include "codec_internal.h"
 #include "encode.h"
-#include "zlib_wrapper.h"
+#include "internal.h"
 
 #include <zlib.h>
 
@@ -75,7 +74,8 @@ typedef struct ZmbvEncContext {
     int keyint, curfrm;
     int bypp;
     enum ZmbvFormat fmt;
-    FFZStream zstream;
+    int zlib_init_ok;
+    z_stream zstream;
 
     int score_tab[ZMBV_BLOCK * ZMBV_BLOCK * 4 + 1];
 } ZmbvEncContext;
@@ -169,7 +169,6 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
                         const AVFrame *pict, int *got_packet)
 {
     ZmbvEncContext * const c = avctx->priv_data;
-    z_stream  *const zstream = &c->zstream.zstream;
     const AVFrame * const p = pict;
     uint8_t *src, *prev, *buf;
     uint32_t *palptr;
@@ -263,21 +262,21 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     }
 
     if (keyframe)
-        deflateReset(zstream);
+        deflateReset(&c->zstream);
 
-    zstream->next_in   = c->work_buf;
-    zstream->avail_in  = work_size;
-    zstream->total_in  = 0;
+    c->zstream.next_in = c->work_buf;
+    c->zstream.avail_in = work_size;
+    c->zstream.total_in = 0;
 
-    zstream->next_out  = c->comp_buf;
-    zstream->avail_out = c->comp_size;
-    zstream->total_out = 0;
-    if (deflate(zstream, Z_SYNC_FLUSH) != Z_OK) {
+    c->zstream.next_out = c->comp_buf;
+    c->zstream.avail_out = c->comp_size;
+    c->zstream.total_out = 0;
+    if(deflate(&c->zstream, Z_SYNC_FLUSH) != Z_OK){
         av_log(avctx, AV_LOG_ERROR, "Error compressing data\n");
         return -1;
     }
 
-    pkt_size = zstream->total_out + 1 + 6 * keyframe;
+    pkt_size = c->zstream.total_out + 1 + 6*keyframe;
     if ((ret = ff_get_encode_buffer(avctx, pkt, pkt_size, 0)) < 0)
         return ret;
     buf = pkt->data;
@@ -293,7 +292,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         *buf++ = ZMBV_BLOCK; // block height
         pkt->flags |= AV_PKT_FLAG_KEY;
     }
-    memcpy(buf, c->comp_buf, zstream->total_out);
+    memcpy(buf, c->comp_buf, c->zstream.total_out);
 
     *got_packet = 1;
 
@@ -308,7 +307,8 @@ static av_cold int encode_end(AVCodecContext *avctx)
     av_freep(&c->work_buf);
 
     av_freep(&c->prev_buf);
-    ff_deflate_end(&c->zstream);
+    if (c->zlib_init_ok)
+        deflateEnd(&c->zstream);
 
     return 0;
 }
@@ -319,6 +319,7 @@ static av_cold int encode_end(AVCodecContext *avctx)
 static av_cold int encode_init(AVCodecContext *avctx)
 {
     ZmbvEncContext * const c = avctx->priv_data;
+    int zret; // Zlib return code
     int i;
     int lvl = 9;
     int prev_size, prev_offset;
@@ -407,20 +408,30 @@ static av_cold int encode_init(AVCodecContext *avctx)
     }
     c->prev = c->prev_buf + prev_offset;
 
-    return ff_deflate_init(&c->zstream, lvl, avctx);
+    c->zstream.zalloc = Z_NULL;
+    c->zstream.zfree = Z_NULL;
+    c->zstream.opaque = Z_NULL;
+    zret = deflateInit(&c->zstream, lvl);
+    if (zret != Z_OK) {
+        av_log(avctx, AV_LOG_ERROR, "Inflate init error: %d\n", zret);
+        return -1;
+    }
+    c->zlib_init_ok = 1;
+
+    return 0;
 }
 
-const FFCodec ff_zmbv_encoder = {
-    .p.name         = "zmbv",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("Zip Motion Blocks Video"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_ZMBV,
-    .p.capabilities = AV_CODEC_CAP_DR1,
+const AVCodec ff_zmbv_encoder = {
+    .name           = "zmbv",
+    .long_name      = NULL_IF_CONFIG_SMALL("Zip Motion Blocks Video"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_ZMBV,
+    .capabilities   = AV_CODEC_CAP_DR1,
     .priv_data_size = sizeof(ZmbvEncContext),
     .init           = encode_init,
-    FF_CODEC_ENCODE_CB(encode_frame),
+    .encode2        = encode_frame,
     .close          = encode_end,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) { AV_PIX_FMT_PAL8,
+    .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_PAL8,
                                                      AV_PIX_FMT_RGB555LE,
                                                      AV_PIX_FMT_RGB565LE,
 #ifdef ZMBV_ENABLE_24BPP

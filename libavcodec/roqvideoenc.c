@@ -61,7 +61,6 @@
 #include "libavutil/opt.h"
 #include "roqvideo.h"
 #include "bytestream.h"
-#include "codec_internal.h"
 #include "elbg.h"
 #include "encode.h"
 #include "internal.h"
@@ -1081,8 +1080,8 @@ static int roq_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     if (enc->first_frame) {
         /* Alloc memory for the reconstruction data (we must know the stride
          for that) */
-        if ((ret = ff_encode_alloc_frame(avctx, roq->current_frame)) < 0 ||
-            (ret = ff_encode_alloc_frame(avctx, roq->last_frame   )) < 0)
+        if ((ret = ff_get_buffer(avctx, roq->current_frame, 0)) < 0 ||
+            (ret = ff_get_buffer(avctx, roq->last_frame,    0)) < 0)
             return ret;
 
         /* Before the first video frame, write a "video info" chunk */
@@ -1118,17 +1117,17 @@ static const AVClass roq_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_roq_encoder = {
-    .p.name               = "roqvideo",
-    .p.long_name          = NULL_IF_CONFIG_SMALL("id RoQ video"),
-    .p.type               = AVMEDIA_TYPE_VIDEO,
-    .p.id                 = AV_CODEC_ID_ROQ,
+const AVCodec ff_roq_encoder = {
+    .name                 = "roqvideo",
+    .long_name            = NULL_IF_CONFIG_SMALL("id RoQ video"),
+    .type                 = AVMEDIA_TYPE_VIDEO,
+    .id                   = AV_CODEC_ID_ROQ,
     .priv_data_size       = sizeof(RoqEncContext),
     .init                 = roq_encode_init,
-    FF_CODEC_ENCODE_CB(roq_encode_frame),
+    .encode2              = roq_encode_frame,
     .close                = roq_encode_end,
-    .p.pix_fmts           = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ444P,
+    .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ444P,
                                                         AV_PIX_FMT_NONE },
-    .p.priv_class   = &roq_class,
+    .priv_class     = &roq_class,
     .caps_internal        = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

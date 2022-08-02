@@ -23,8 +23,6 @@
  * receive commands through libzeromq and broker them to filters
  */
 
-#include "config_components.h"
-
 #include <zmq.h>
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"

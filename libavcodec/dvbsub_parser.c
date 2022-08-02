@@ -25,6 +25,7 @@
 #include "libavutil/intreadwrite.h"
 
 #include "avcodec.h"
+#include "internal.h"
 
 /* Parser (mostly) copied from dvdsub.c */
 

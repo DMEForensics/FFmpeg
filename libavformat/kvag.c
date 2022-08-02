@@ -20,8 +20,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "avio_internal.h"
@@ -73,11 +71,18 @@ static int kvag_read_header(AVFormatContext *s)
     par->codec_id               = AV_CODEC_ID_ADPCM_IMA_SSI;
     par->format                 = AV_SAMPLE_FMT_S16;
 
-    av_channel_layout_default(&par->ch_layout, !!hdr.stereo + 1);
+    if (hdr.stereo) {
+        par->channel_layout     = AV_CH_LAYOUT_STEREO;
+        par->channels           = 2;
+    } else {
+        par->channel_layout     = AV_CH_LAYOUT_MONO;
+        par->channels           = 1;
+    }
+
     par->sample_rate            = hdr.sample_rate;
     par->bits_per_coded_sample  = 4;
     par->block_align            = 1;
-    par->bit_rate               = par->ch_layout.nb_channels *
+    par->bit_rate               = par->channels *
                                   (uint64_t)par->sample_rate *
                                   par->bits_per_coded_sample;
 
@@ -85,7 +90,7 @@ static int kvag_read_header(AVFormatContext *s)
     st->start_time              = 0;
     st->duration                = hdr.data_size *
                                   (8 / par->bits_per_coded_sample) /
-                                  par->ch_layout.nb_channels;
+                                  par->channels;
 
     return 0;
 }
@@ -100,7 +105,7 @@ static int kvag_read_packet(AVFormatContext *s, AVPacket *pkt)
 
     pkt->flags          &= ~AV_PKT_FLAG_CORRUPT;
     pkt->stream_index   = 0;
-    pkt->duration       = ret * (8 / par->bits_per_coded_sample) / par->ch_layout.nb_channels;
+    pkt->duration       = ret * (8 / par->bits_per_coded_sample) / par->channels;
 
     return 0;
 }
@@ -142,7 +147,7 @@ static int kvag_write_init(AVFormatContext *s)
         return AVERROR(EINVAL);
     }
 
-    if (par->ch_layout.nb_channels > 2) {
+    if (par->channels > 2) {
         av_log(s, AV_LOG_ERROR, "KVAG files only support up to 2 channels\n");
         return AVERROR(EINVAL);
     }
@@ -163,7 +168,7 @@ static int kvag_write_header(AVFormatContext *s)
     AV_WL32(buf +  0, KVAG_TAG);
     AV_WL32(buf +  4, 0); /* Data size, we fix this up later. */
     AV_WL32(buf +  8, par->sample_rate);
-    AV_WL16(buf + 12, par->ch_layout.nb_channels == 2);
+    AV_WL16(buf + 12, par->channels == 2);
 
     avio_write(s->pb, buf, sizeof(buf));
     return 0;

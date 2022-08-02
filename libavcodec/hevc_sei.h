@@ -26,7 +26,6 @@
 #include "libavutil/buffer.h"
 
 #include "get_bits.h"
-#include "hevc.h"
 #include "sei.h"
 
 
@@ -78,10 +77,6 @@ typedef struct HEVCSEIMasteringDisplay {
 typedef struct HEVCSEIDynamicHDRPlus {
     AVBufferRef *info;
 } HEVCSEIDynamicHDRPlus;
-
-typedef struct HEVCSEIDynamicHDRVivid {
-    AVBufferRef *info;
-} HEVCSEIDynamicHDRVivid;
 
 typedef struct HEVCSEIContentLight {
     int present;
@@ -144,7 +139,6 @@ typedef struct HEVCSEI {
     HEVCSEIUnregistered unregistered;
     HEVCSEIMasteringDisplay mastering_display;
     HEVCSEIDynamicHDRPlus dynamic_hdr_plus;
-    HEVCSEIDynamicHDRVivid dynamic_hdr_vivid;
     HEVCSEIContentLight content_light;
     int active_seq_parameter_set_id;
     HEVCSEIAlternativeTransfer alternative_transfer;
@@ -155,7 +149,7 @@ typedef struct HEVCSEI {
 struct HEVCParamSets;
 
 int ff_hevc_decode_nal_sei(GetBitContext *gb, void *logctx, HEVCSEI *s,
-                           const struct HEVCParamSets *ps, enum HEVCNALUnitType type);
+                           const struct HEVCParamSets *ps, int type);
 
 /**
  * Reset SEI values that are stored on the Context.

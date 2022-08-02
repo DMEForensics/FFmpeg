@@ -16,8 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/pixdesc.h"
@@ -652,7 +650,7 @@ int ff_vaapi_decode_init(AVCodecContext *avctx)
     ctx->hwctx  = ctx->device->hwctx;
 
     err = vaapi_decode_make_config(avctx, ctx->frames->device_ref,
-                                   &ctx->va_config, NULL);
+                                   &ctx->va_config, avctx->hw_frames_ctx);
     if (err)
         goto fail;
 

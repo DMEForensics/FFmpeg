@@ -38,8 +38,6 @@
 #include "libavutil/opt.h"
 #include "libavutil/thread.h"
 #include "avcodec.h"
-#include "codec_internal.h"
-#include "config_components.h"
 #include "encode.h"
 #include "internal.h"
 #include "me_cmp.h"
@@ -47,8 +45,6 @@
 #include "audiodsp.h"
 #include "ac3dsp.h"
 #include "ac3.h"
-#include "ac3defs.h"
-#include "ac3tab.h"
 #include "fft.h"
 #include "ac3enc.h"
 #include "eac3enc.h"
@@ -136,7 +132,7 @@ const AVClass ff_ac3enc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodecDefault ff_ac3_enc_defaults[] = {
+const AVCodecDefault ff_ac3_enc_defaults[] = {
     { "b",  "0" },
     { NULL }
 };
@@ -151,7 +147,6 @@ static uint8_t exponent_group_tab[2][3][256];
 /**
  * List of supported channel layouts.
  */
-#if FF_API_OLD_CHANNEL_LAYOUT
 const uint64_t ff_ac3_channel_layouts[19] = {
      AV_CH_LAYOUT_MONO,
      AV_CH_LAYOUT_STEREO,
@@ -172,47 +167,6 @@ const uint64_t ff_ac3_channel_layouts[19] = {
      AV_CH_LAYOUT_5POINT1,
      AV_CH_LAYOUT_5POINT1_BACK,
      0
-};
-#endif
-
-const AVChannelLayout ff_ac3_ch_layouts[19] = {
-    AV_CHANNEL_LAYOUT_MONO,
-    AV_CHANNEL_LAYOUT_STEREO,
-    AV_CHANNEL_LAYOUT_2_1,
-    AV_CHANNEL_LAYOUT_SURROUND,
-    AV_CHANNEL_LAYOUT_2_2,
-    AV_CHANNEL_LAYOUT_QUAD,
-    AV_CHANNEL_LAYOUT_4POINT0,
-    AV_CHANNEL_LAYOUT_5POINT0,
-    AV_CHANNEL_LAYOUT_5POINT0_BACK,
-    {
-        .nb_channels = 2,
-        .order       = AV_CHANNEL_ORDER_NATIVE,
-        .u.mask      = AV_CH_LAYOUT_MONO | AV_CH_LOW_FREQUENCY,
-    },
-    {
-        .nb_channels = 3,
-        .order       = AV_CHANNEL_ORDER_NATIVE,
-        .u.mask      = AV_CH_LAYOUT_STEREO | AV_CH_LOW_FREQUENCY,
-    },
-    {
-        .nb_channels = 4,
-        .order       = AV_CHANNEL_ORDER_NATIVE,
-        .u.mask      = AV_CH_LAYOUT_2_1 | AV_CH_LOW_FREQUENCY,
-    },
-    {
-        .nb_channels = 4,
-        .order       = AV_CHANNEL_ORDER_NATIVE,
-        .u.mask      = AV_CH_LAYOUT_SURROUND | AV_CH_LOW_FREQUENCY,
-    },
-    {
-        .nb_channels = 5,
-        .order       = AV_CHANNEL_ORDER_NATIVE,
-        .u.mask      = AV_CH_LAYOUT_4POINT0 | AV_CH_LOW_FREQUENCY,
-    },
-    AV_CHANNEL_LAYOUT_5POINT1,
-    AV_CHANNEL_LAYOUT_5POINT1_BACK,
-    { 0 },
 };
 
 /**
@@ -1843,7 +1797,7 @@ static void dprint_options(AC3EncodeContext *s)
     }
     ff_dlog(avctx, "bitstream_id: %s (%d)\n", strbuf, s->bitstream_id);
     ff_dlog(avctx, "sample_fmt: %s\n", av_get_sample_fmt_name(avctx->sample_fmt));
-    av_channel_layout_describe(&avctx->ch_layout, strbuf, sizeof(strbuf));
+    av_get_channel_layout_string(strbuf, 32, s->channels, avctx->channel_layout);
     ff_dlog(avctx, "channel_layout: %s\n", strbuf);
     ff_dlog(avctx, "sample_rate: %d\n", s->sample_rate);
     ff_dlog(avctx, "bit_rate: %d\n", s->bit_rate);
@@ -2087,11 +2041,11 @@ int ff_ac3_validate_metadata(AC3EncodeContext *s)
 
     /* validate audio service type / channels combination */
     if ((avctx->audio_service_type == AV_AUDIO_SERVICE_TYPE_KARAOKE &&
-         avctx->ch_layout.nb_channels == 1) ||
+         avctx->channels == 1) ||
         ((avctx->audio_service_type == AV_AUDIO_SERVICE_TYPE_COMMENTARY ||
           avctx->audio_service_type == AV_AUDIO_SERVICE_TYPE_EMERGENCY  ||
           avctx->audio_service_type == AV_AUDIO_SERVICE_TYPE_VOICE_OVER)
-         && avctx->ch_layout.nb_channels > 1)) {
+         && avctx->channels > 1)) {
         av_log(avctx, AV_LOG_ERROR, "invalid audio service type for the "
                                     "specified number of channels\n");
         return AVERROR(EINVAL);
@@ -2213,29 +2167,27 @@ av_cold int ff_ac3_encode_close(AVCodecContext *avctx)
 /*
  * Set channel information during initialization.
  */
-static av_cold int set_channel_info(AVCodecContext *avctx)
+static av_cold int set_channel_info(AC3EncodeContext *s, int channels,
+                                    uint64_t *channel_layout)
 {
-    AC3EncodeContext *s = avctx->priv_data;
-    int channels = avctx->ch_layout.nb_channels;
-    uint64_t mask = avctx->ch_layout.u.mask;
+    int ch_layout;
 
     if (channels < 1 || channels > AC3_MAX_CHANNELS)
         return AVERROR(EINVAL);
-    if (mask > 0x7FF)
+    if (*channel_layout > 0x7FF)
         return AVERROR(EINVAL);
+    ch_layout = *channel_layout;
+    if (!ch_layout)
+        ch_layout = av_get_default_channel_layout(channels);
 
-    if (!mask)
-        av_channel_layout_default(&avctx->ch_layout, channels);
-    mask = avctx->ch_layout.u.mask;
-
-    s->lfe_on       = !!(mask & AV_CH_LOW_FREQUENCY);
+    s->lfe_on       = !!(ch_layout & AV_CH_LOW_FREQUENCY);
     s->channels     = channels;
     s->fbw_channels = channels - s->lfe_on;
     s->lfe_channel  = s->lfe_on ? s->fbw_channels + 1 : -1;
     if (s->lfe_on)
-        mask -= AV_CH_LOW_FREQUENCY;
+        ch_layout -= AV_CH_LOW_FREQUENCY;
 
-    switch (mask) {
+    switch (ch_layout) {
     case AV_CH_LAYOUT_MONO:           s->channel_mode = AC3_CHMODE_MONO;   break;
     case AV_CH_LAYOUT_STEREO:         s->channel_mode = AC3_CHMODE_STEREO; break;
     case AV_CH_LAYOUT_SURROUND:       s->channel_mode = AC3_CHMODE_3F;     break;
@@ -2252,9 +2204,9 @@ static av_cold int set_channel_info(AVCodecContext *avctx)
     s->has_surround =  s->channel_mode & 0x04;
 
     s->channel_map  = ac3_enc_channel_map[s->channel_mode][s->lfe_on];
+    *channel_layout = ch_layout;
     if (s->lfe_on)
-        mask |= AV_CH_LOW_FREQUENCY;
-    av_channel_layout_from_mask(&avctx->ch_layout, mask);
+        *channel_layout |= AV_CH_LOW_FREQUENCY;
 
     return 0;
 }
@@ -2266,12 +2218,12 @@ static av_cold int validate_options(AC3EncodeContext *s)
     int i, ret, max_sr;
 
     /* validate channel layout */
-    if (!avctx->ch_layout.nb_channels) {
+    if (!avctx->channel_layout) {
         av_log(avctx, AV_LOG_WARNING, "No channel layout specified. The "
                                       "encoder will guess the layout, but it "
                                       "might be incorrect.\n");
     }
-    ret = set_channel_info(avctx);
+    ret = set_channel_info(s, avctx->channels, &avctx->channel_layout);
     if (ret) {
         av_log(avctx, AV_LOG_ERROR, "invalid channel layout\n");
         return ret;

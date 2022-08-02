@@ -24,7 +24,6 @@
 #include "libavutil/intreadwrite.h"
 #include "libavcodec/bytestream.h"
 #include "avformat.h"
-#include "demux.h"
 #include "internal.h"
 
 #define LXF_MAX_PACKET_HEADER_SIZE 256
@@ -282,7 +281,7 @@ static int lxf_read_header(AVFormatContext *s)
 
         st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
         st->codecpar->sample_rate = LXF_SAMPLERATE;
-        st->codecpar->ch_layout.nb_channels = lxf->channels;
+        st->codecpar->channels    = lxf->channels;
 
         avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
     }

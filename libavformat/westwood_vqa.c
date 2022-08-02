@@ -32,7 +32,6 @@
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "avio_internal.h"
-#include "demux.h"
 #include "internal.h"
 
 #define FORM_TAG MKBETAG('F', 'O', 'R', 'M')
@@ -227,7 +226,7 @@ static int wsvqa_read_packet(AVFormatContext *s,
                         wsvqa->bps = 8;
                     st->codecpar->sample_rate = wsvqa->sample_rate;
                     st->codecpar->bits_per_coded_sample = wsvqa->bps;
-                    av_channel_layout_default(&st->codecpar->ch_layout, wsvqa->channels);
+                    st->codecpar->channels = wsvqa->channels;
                     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
 
                     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);

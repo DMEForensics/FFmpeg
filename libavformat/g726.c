@@ -19,8 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "config_components.h"
-
 #include "avformat.h"
 #include "internal.h"
 #include "libavutil/opt.h"
@@ -44,7 +42,7 @@ static int g726_read_header(AVFormatContext *s)
     st->codecpar->sample_rate           = c->sample_rate;
     st->codecpar->bits_per_coded_sample = c->code_size;
     st->codecpar->bit_rate              = ((int[]){ 16000, 24000, 32000, 40000 })[c->code_size - 2];
-    st->codecpar->ch_layout.nb_channels = 1;
+    st->codecpar->channels              = 1;
 
     return 0;
 }

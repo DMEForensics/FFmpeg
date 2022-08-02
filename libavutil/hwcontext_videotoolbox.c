@@ -210,36 +210,9 @@ static int vt_pool_alloc(AVHWFramesContext *ctx)
     return AVERROR_EXTERNAL;
 }
 
-static void videotoolbox_buffer_release(void *opaque, uint8_t *data)
+static AVBufferRef *vt_dummy_pool_alloc(void *opaque, size_t size)
 {
-    CVPixelBufferRelease((CVPixelBufferRef)data);
-}
-
-static AVBufferRef *vt_pool_alloc_buffer(void *opaque, size_t size)
-{
-    CVPixelBufferRef pixbuf;
-    AVBufferRef *buf;
-    CVReturn err;
-    AVHWFramesContext *ctx = opaque;
-    VTFramesContext *fctx = ctx->internal->priv;
-
-    err = CVPixelBufferPoolCreatePixelBuffer(
-        NULL,
-        fctx->pool,
-        &pixbuf
-    );
-    if (err != kCVReturnSuccess) {
-        av_log(ctx, AV_LOG_ERROR, "Failed to create pixel buffer from pool: %d\n", err);
-        return NULL;
-    }
-
-    buf = av_buffer_create((uint8_t *)pixbuf, size,
-                           videotoolbox_buffer_release, NULL, 0);
-    if (!buf) {
-        CVPixelBufferRelease(pixbuf);
-        return NULL;
-    }
-    return buf;
+    return NULL;
 }
 
 static void vt_frames_uninit(AVHWFramesContext *ctx)
@@ -265,9 +238,9 @@ static int vt_frames_init(AVHWFramesContext *ctx)
         return AVERROR(ENOSYS);
     }
 
+    // create a dummy pool so av_hwframe_get_buffer doesn't EINVAL
     if (!ctx->pool) {
-        ctx->internal->pool_internal = av_buffer_pool_init2(
-                sizeof(CVPixelBufferRef), ctx, vt_pool_alloc_buffer, NULL);
+        ctx->internal->pool_internal = av_buffer_pool_init2(0, ctx, vt_dummy_pool_alloc, NULL);
         if (!ctx->internal->pool_internal)
             return AVERROR(ENOMEM);
     }
@@ -279,11 +252,41 @@ static int vt_frames_init(AVHWFramesContext *ctx)
     return 0;
 }
 
+static void videotoolbox_buffer_release(void *opaque, uint8_t *data)
+{
+    CVPixelBufferRelease((CVPixelBufferRef)data);
+}
+
 static int vt_get_buffer(AVHWFramesContext *ctx, AVFrame *frame)
 {
-    frame->buf[0] = av_buffer_pool_get(ctx->pool);
-    if (!frame->buf[0])
-        return AVERROR(ENOMEM);
+    VTFramesContext *fctx = ctx->internal->priv;
+
+    if (ctx->pool && ctx->pool->size != 0) {
+        frame->buf[0] = av_buffer_pool_get(ctx->pool);
+        if (!frame->buf[0])
+            return AVERROR(ENOMEM);
+    } else {
+        CVPixelBufferRef pixbuf;
+        AVBufferRef *buf = NULL;
+        CVReturn err;
+
+        err = CVPixelBufferPoolCreatePixelBuffer(
+            NULL,
+            fctx->pool,
+            &pixbuf
+        );
+        if (err != kCVReturnSuccess) {
+            av_log(ctx, AV_LOG_ERROR, "Failed to create pixel buffer from pool: %d\n", err);
+            return AVERROR_EXTERNAL;
+        }
+
+        buf = av_buffer_create((uint8_t *)pixbuf, 1, videotoolbox_buffer_release, NULL, 0);
+        if (!buf) {
+            CVPixelBufferRelease(pixbuf);
+            return AVERROR(ENOMEM);
+        }
+        frame->buf[0] = buf;
+    }
 
     frame->data[3] = frame->buf[0]->data;
     frame->format  = AV_PIX_FMT_VIDEOTOOLBOX;
@@ -708,30 +711,6 @@ fail:
     return err;
 }
 
-static int vt_map_from(AVHWFramesContext *hwfc, AVFrame *dst,
-                       const AVFrame *src, int flags)
-{
-    int err;
-
-    if (dst->format == AV_PIX_FMT_NONE)
-        dst->format = hwfc->sw_format;
-    else if (dst->format != hwfc->sw_format)
-        return AVERROR(ENOSYS);
-
-    err = vt_map_frame(hwfc, dst, src, flags);
-    if (err)
-        return err;
-
-    dst->width  = src->width;
-    dst->height = src->height;
-
-    err = av_frame_copy_props(dst, src);
-    if (err)
-        return err;
-
-    return 0;
-}
-
 static int vt_device_create(AVHWDeviceContext *ctx, const char *device,
                             AVDictionary *opts, int flags)
 {
@@ -757,7 +736,6 @@ const HWContextType ff_hwcontext_type_videotoolbox = {
     .transfer_get_formats = vt_transfer_get_formats,
     .transfer_data_to     = vt_transfer_data_to,
     .transfer_data_from   = vt_transfer_data_from,
-    .map_from             = vt_map_from,
 
     .pix_fmts = (const enum AVPixelFormat[]){ AV_PIX_FMT_VIDEOTOOLBOX, AV_PIX_FMT_NONE },
 };

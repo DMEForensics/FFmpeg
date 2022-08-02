@@ -34,10 +34,10 @@
 
 #include "avcodec.h"
 #include "encode.h"
-#include "codec_internal.h"
+#include "internal.h"
 #include "put_bits.h"
-#include "put_golomb.h"
 #include "rangecoder.h"
+#include "golomb.h"
 #include "mathops.h"
 #include "ffv1.h"
 
@@ -140,31 +140,32 @@ static void find_best_state(uint8_t best_state[256][256],
                             const uint8_t one_state[256])
 {
     int i, j, k, m;
-    uint32_t l2tab[256];
+    double l2tab[256];
 
     for (i = 1; i < 256; i++)
-        l2tab[i] = -log2(i / 256.0) * ((1U << 31) / 8);
+        l2tab[i] = log2(i / 256.0);
 
     for (i = 0; i < 256; i++) {
-        uint64_t best_len[256];
+        double best_len[256];
+        double p = i / 256.0;
 
         for (j = 0; j < 256; j++)
-            best_len[j] = UINT64_MAX;
+            best_len[j] = 1 << 30;
 
         for (j = FFMAX(i - 10, 1); j < FFMIN(i + 11, 256); j++) {
-            uint32_t occ[256] = { 0 };
-            uint64_t len      = 0;
-            occ[j] = UINT32_MAX;
+            double occ[256] = { 0 };
+            double len      = 0;
+            occ[j] = 1.0;
 
             if (!one_state[j])
                 continue;
 
             for (k = 0; k < 256; k++) {
-                uint32_t newocc[256] = { 0 };
+                double newocc[256] = { 0 };
                 for (m = 1; m < 256; m++)
                     if (occ[m]) {
-                        len += (occ[m]*((       i *(uint64_t)l2tab[    m]
-                                         + (256-i)*(uint64_t)l2tab[256-m])>>8)) >> 8;
+                        len -=occ[m]*(     p *l2tab[    m]
+                                      + (1-p)*l2tab[256-m]);
                     }
                 if (len < best_len[k]) {
                     best_len[k]      = len;
@@ -172,8 +173,8 @@ static void find_best_state(uint8_t best_state[256][256],
                 }
                 for (m = 1; m < 256; m++)
                     if (occ[m]) {
-                        newocc[      one_state[      m]] += occ[m] * (uint64_t)       i  >> 8;
-                        newocc[256 - one_state[256 - m]] += occ[m] * (uint64_t)(256 - i) >> 8;
+                        newocc[      one_state[      m]] += occ[m] * p;
+                        newocc[256 - one_state[256 - m]] += occ[m] * (1 - p);
                     }
                 memcpy(occ, newocc, sizeof(occ));
             }
@@ -1276,17 +1277,17 @@ static const AVClass ffv1_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-const FFCodec ff_ffv1_encoder = {
-    .p.name         = "ffv1",
-    .p.long_name    = NULL_IF_CONFIG_SMALL("FFmpeg video codec #1"),
-    .p.type         = AVMEDIA_TYPE_VIDEO,
-    .p.id           = AV_CODEC_ID_FFV1,
+const AVCodec ff_ffv1_encoder = {
+    .name           = "ffv1",
+    .long_name      = NULL_IF_CONFIG_SMALL("FFmpeg video codec #1"),
+    .type           = AVMEDIA_TYPE_VIDEO,
+    .id             = AV_CODEC_ID_FFV1,
     .priv_data_size = sizeof(FFV1Context),
     .init           = encode_init,
-    FF_CODEC_ENCODE_CB(encode_frame),
+    .encode2        = encode_frame,
     .close          = encode_close,
-    .p.capabilities = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_DELAY,
-    .p.pix_fmts     = (const enum AVPixelFormat[]) {
+    .capabilities   = AV_CODEC_CAP_SLICE_THREADS | AV_CODEC_CAP_DELAY,
+    .pix_fmts       = (const enum AVPixelFormat[]) {
         AV_PIX_FMT_YUV420P,   AV_PIX_FMT_YUVA420P,  AV_PIX_FMT_YUVA422P,  AV_PIX_FMT_YUV444P,
         AV_PIX_FMT_YUVA444P,  AV_PIX_FMT_YUV440P,   AV_PIX_FMT_YUV422P,   AV_PIX_FMT_YUV411P,
         AV_PIX_FMT_YUV410P,   AV_PIX_FMT_0RGB32,    AV_PIX_FMT_RGB32,     AV_PIX_FMT_YUV420P16,
@@ -1309,6 +1310,6 @@ const FFCodec ff_ffv1_encoder = {
         AV_PIX_FMT_NONE
 
     },
-    .p.priv_class   = &ffv1_class,
+    .priv_class     = &ffv1_class,
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };
